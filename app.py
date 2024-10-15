@@ -36,7 +36,8 @@ def scan():
     print("Scanning.")
     return render_template("scan.html")
 
-@app.route('/process_card/<card_id>',  methods=['GET'])
+
+@app.route('/process_card/<card_id>',  methods=['GET', 'POST'])
 def process_card(card_id):
 
     bal = pd.DataFrame(db.session.query(Transactions.amount)\

@@ -28,16 +28,26 @@ html5QrcodeScanner.render(onScanSuccess);
 </script>
 
 <script>
-    var html5QrcodeScanner = new Html5QrcodeScanner(
+var html5QrcodeScanner = new Html5QrcodeScanner(
     "reader", { fps: 10, qrbox: 250 });
-        
+
 function onScanSuccess(decodedText, decodedResult) {
-    // Handle on success condition with the decoded text or result.
+    // Log the scanned result
     console.log(`Scan result: ${decodedText}`, decodedResult);
-    // ...
+    
+    // Assuming the QR code contains a UUID or some identifier
+    const data = {
+        uuid: decodedText
+    };
+
+    // Construct the URL to redirect to, using the scanned data
+    let proc_url = `/process_card/${decodedText}`;
     html5QrcodeScanner.clear();
-    // ^ this will stop the scanner (video feed) and clear the scan area.
+
+    window.location.href = proc_url;
+  
 }
 
+// Render the QR code scanner with the callback function
 html5QrcodeScanner.render(onScanSuccess);
 </script>
