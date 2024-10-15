@@ -40,13 +40,13 @@ def scan():
 def process_card(card_id):
 
     bal = pd.DataFrame(db.session.query(Transactions.amount)\
-    .filter(Transactions.card_id == card_id).all())
-
+    .filter(Transactions.card_id == card_id).all(), columns=['amount'])
+    print(bal)
     cur_bal = bal['amount'].sum()
     print("Scanning.")
-    return render_template("scan.html", balance=cur_bal)
+    return render_template("cards.html", balance=cur_bal)
 
-local = False
+local = True
 if local:
     app.run(debug=True, host="0.0.0.0", port=8080, threaded=True, use_reloader=True)
 
