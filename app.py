@@ -7,7 +7,12 @@ app = Flask(__name__)
 
 @app.route('/')
 def landing():
-    return render_template("base.html")
+    return render_template("landing.html")
+
+@app.route('/scan')
+def scan():
+    print("Scanning.")
+    return render_template("scan.html")
 
 local = False
 if local:
