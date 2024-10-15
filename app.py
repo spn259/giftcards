@@ -3,6 +3,28 @@
 from flask import (Flask, json, jsonify, redirect, render_template, request,
                    session, url_for, render_template_string, current_app)
 
+from db import PostgresDB
+from models import Cards, Transactions
+import os
+import uuid 
+from datetime import datetime, timezone
+import pandas as pd
+
+username = os.environ.get('username')
+password = os.environ.get('password')
+host = os.environ.get('host')
+port = os.environ.get('port')
+database = os.environ.get('database')
+sslmode = os.environ.get('sslmode')
+
+db = PostgresDB(
+        username=username,
+        password=password,
+        host=host,
+        port=port,
+        database=database,
+        sslmode=sslmode)
+
 app = Flask(__name__)
 
 @app.route('/')
@@ -13,6 +35,16 @@ def landing():
 def scan():
     print("Scanning.")
     return render_template("scan.html")
+
+@app.route('/process_card/<card_id>',  methods=['GET'])
+def process_card(card_id):
+
+    bal = pd.DataFrame(db.session.query(Transactions.amount)\
+    .filter(Transactions.card_id == card_id).all())
+
+    cur_bal = bal['amount'].sum()
+    print("Scanning.")
+    return render_template("scan.html", balance=cur_bal)
 
 local = False
 if local:
