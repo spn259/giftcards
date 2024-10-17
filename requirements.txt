@@ -12,5 +12,6 @@ zipp==3.15.0
 sqlalchemy 
 psycopg2
 flask-login
+flask_sqlalchemy
 pandas
 

@@ -1,6 +1,8 @@
 from flask import (Flask, jsonify, redirect, render_template, request, session,
                    url_for, current_app, flash)
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, UserMixin
 from db import PostgresDB
 from models import Cards, Transactions
 import os
@@ -16,66 +18,69 @@ port = os.environ.get('port')
 database = os.environ.get('database')
 sslmode = os.environ.get('sslmode')
 
-db = PostgresDB(
-    username=username,
-    password=password,
-    host=host,
-    port=port,
-    database=database,
-    sslmode=sslmode)
+# db = PostgresDB(
+#     username=username,
+#     password=password,
+#     host=host,
+#     port=port,
+#     database=database,
+#     sslmode=sslmode)
 
 app = Flask(__name__)
+
+# Configuring SQLAlchemy to connect to your Postgres database
+app.config['SQLALCHEMY_DATABASE_URI'] = f"postgresql://{username}:{password}@{host}:{port}/{database}"
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.secret_key = 'supersecretkey'
+
 
 # Secret key for session management (you should use a secure random key)
 app.secret_key = 'supersecretkey'
 
-# Initialize Flask-Login
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'  # Redirect unauthorized users to login page
+db = SQLAlchemy(app)
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
 
-# Define User model for Flask-Login
-class User(UserMixin):
-    def __init__(self, id, username):
-        self.id = id
-        self.username = username
+# User Model linked to the 'users' table in the database
+class User(UserMixin, db.Model):
+    __tablename__ = 'users'
 
-# In-memory users (for simplicity, replace this with a DB query in production)
-users = {
-    "steven": {"id": 1, "username": "steven", "password": "password"},
-    "user2": {"id": 2, "username": "user", "password": "password"},
-}
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(255), unique=True, nullable=False)
+    password = db.Column(db.String(255), nullable=False)
 
-# User loader callback (used by Flask-Login to reload users from session)
+# Load the user from the database based on user ID
 @login_manager.user_loader
 def load_user(user_id):
-    for user in users.values():
-        if user['id'] == int(user_id):
-            return User(user['id'], user['username'])
-    return None
+    return User.query.get(int(user_id))
+# Define User model for Flask-Login
 
+# User loader callback (used by Flask-Login to reload users from session
 # Routes
 @app.route('/')
 def landing():
     return render_template("landing.html")
 
+from werkzeug.security import check_password_hash, generate_password_hash
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         username = request.form['username'].strip()
-        password = request.form['password'].strip()        
-        # Validate user
-        user = users.get(username)
-        print("User validated.")
-        if user and user['password'] == password:
-            print("Logging in")
-            login_user(User(user['id'], user['username']))
+        password = request.form['password'].strip()
+
+        # Query the database for the user
+        user = User.query.filter_by(username=username).first()
+
+        # Check if the user exists and the password matches
+        if user and check_password_hash(user.password, password):
+            login_user(user)
             flash('Login successful!', 'success')
             return redirect(url_for('scan'))
         else:
             flash('Invalid credentials. Please try again.', 'danger')
-    
-    return render_template("login.html")
+
+    return render_template('login.html')
 
 @app.route('/logout')
 @login_required
@@ -89,6 +94,26 @@ def logout():
 def scan():
     print("Scanning.")
     return render_template("scan.html")
+
+@app.route('/process_card/<card_id>', methods=['GET', 'POST'])
+@login_required  # Require login to access this page
+def process_card(card_id):
+    trans = pd.DataFrame(db.session.query(Transactions.amount, Transactions.transaction_type, Transactions.added)
+                       .filter(Transactions.card_id == card_id).all(), columns=['amount', 'transaction_type', 'transaction_date'])
+    
+    
+    t_d = list()
+    for i, r in trans.iterrows():
+        if r.transaction_type.strip() == 'add':
+            t_type = 'Abono'
+        else:
+            t_type = 'Gasto'
+        t_d.append({'type': t_type, 'amount': r.amount, 'transaction_date': r.transaction_date})
+
+    cur_bal = trans['amount'].sum()
+    print("Scanning.")
+    return render_template("cards.html", balance=cur_bal, trans=t_d, card_id=card_id)
+
 
 @app.route('/add_transaction')
 @login_required  # Require login to access this page
@@ -115,26 +140,8 @@ def save_expense():
     db.session.add(fi)
     db.session.commit()
 
-    return render_template("register_expense.html")
+    return redirect(url_for('process_card', card_id=card_id))  # Pass the ID as a parameter
 
-@app.route('/process_card/<card_id>', methods=['GET', 'POST'])
-@login_required  # Require login to access this page
-def process_card(card_id):
-    trans = pd.DataFrame(db.session.query(Transactions.amount, Transactions.transaction_type, Transactions.added)
-                       .filter(Transactions.card_id == card_id).all(), columns=['amount', 'transaction_type', 'transaction_date'])
-    
-    
-    t_d = list()
-    for i, r in trans.iterrows():
-        if r.transaction_type.strip() == 'add':
-            t_type = 'Abono'
-        else:
-            t_type = 'Gasto'
-        t_d.append({'type': t_type, 'amount': r.amount, 'transaction_date': r.transaction_date})
-
-    cur_bal = trans['amount'].sum()
-    print("Scanning.")
-    return render_template("cards.html", balance=cur_bal, trans=t_d, card_id=card_id)
 
 # Run app locally
 local = False

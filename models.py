@@ -37,3 +37,13 @@ class Transactions(Base):
     transaction_type = Column(String, nullable=False)
     amount = Column(Float)
     added = Column(DateTime, nullable=False)
+
+
+
+# User Model linked to the 'users' table in the database
+class User(Base):
+    __tablename__ = 'users'
+
+    id =Column(Integer, primary_key=True)
+    username = Column(String(255), unique=True, nullable=False)
+    password = Column(String(255), nullable=False)
