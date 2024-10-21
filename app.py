@@ -101,7 +101,8 @@ def process_card(card_id):
     trans = pd.DataFrame(db.session.query(Transactions.amount, Transactions.transaction_type, Transactions.added)
                        .filter(Transactions.card_id == card_id).all(), columns=['amount', 'transaction_type', 'transaction_date'])
     
-    
+    if len(trans) == 0:
+        return render_template("cards.html", balance=0, trans=dict(), card_id=card_id)
     t_d = list()
     for i, r in trans.iterrows():
         if r.transaction_type.strip() == 'add':
