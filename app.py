@@ -57,6 +57,8 @@ def load_user(user_id):
 
 # User loader callback (used by Flask-Login to reload users from session
 # Routes
+
+
 @app.route('/')
 def landing():
     return render_template("landing.html")
