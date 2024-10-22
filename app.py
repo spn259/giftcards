@@ -96,7 +96,6 @@ def scan():
     return render_template("scan.html")
 
 @app.route('/process_card/<card_id>', methods=['GET', 'POST'])
-@login_required  # Require login to access this page
 def process_card(card_id):
     trans = pd.DataFrame(db.session.query(Transactions.amount, Transactions.transaction_type, Transactions.added)
                        .filter(Transactions.card_id == card_id).all(), columns=['amount', 'transaction_type', 'transaction_date'])
@@ -114,6 +113,27 @@ def process_card(card_id):
     cur_bal = trans['amount'].sum()
     print("Scanning.")
     return render_template("cards.html", balance=cur_bal, trans=t_d, card_id=card_id)
+
+@app.route('/process_card_admin/<card_id>', methods=['GET', 'POST'])
+@login_required  # Require login to access this page
+def process_card(card_id):
+    trans = pd.DataFrame(db.session.query(Transactions.amount, Transactions.transaction_type, Transactions.added)
+                       .filter(Transactions.card_id == card_id).all(), columns=['amount', 'transaction_type', 'transaction_date'])
+    
+    if len(trans) == 0:
+        return render_template("cards.html", balance=0, trans=dict(), card_id=card_id)
+    t_d = list()
+    for i, r in trans.iterrows():
+        if r.transaction_type.strip() == 'add':
+            t_type = 'Abono'
+        else:
+            t_type = 'Gasto'
+        t_d.append({'type': t_type, 'amount': r.amount, 'transaction_date': r.transaction_date})
+
+    cur_bal = trans['amount'].sum()
+    print("Scanning.")
+    return render_template("cards_admin.html", balance=cur_bal, trans=t_d, card_id=card_id)
+
 
 
 @app.route('/add_transaction')
