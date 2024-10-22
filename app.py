@@ -18,6 +18,10 @@ port = os.environ['PORT']
 database =os.environ['DATABASE']
 sslmode = os.environ['SSLMODE']
 
+print(username, password, host, port, database, sslmode)
+
+
+
 # db = PostgresDB(
 #     username=username,
 #     password=password,
