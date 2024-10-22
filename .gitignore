@@ -1,1 +1,9 @@
 *.pyc
+*.ipynb
+**/create_cards.py
+**/create_transactions.py
+just_qr/
+pdfs/
+**/ai_fill.just_qr
+*.ai
+*.zip
