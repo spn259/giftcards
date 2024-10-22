@@ -22,12 +22,20 @@
       </div>
     </div>
 
+    <!-- Conditional Alert for Error -->
+    {% if error == "true" %}
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+      Hubo un error. Revisa tu PIN (es el mismo de Polo)
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
     <!-- Form Section -->
     <div class="row justify-content-center">
       <div class="col-md-6">
         <div class="card shadow-lg">
           <div class="card-body">
-            <form method="POST" action="{{ url_for('save_expense') }}">
+            <form method="POST" action="{{ url_for('save_abono') }}">
               <input type="hidden" name="card_id" value="{{ card_id }}">
               
               <div class="mb-3">

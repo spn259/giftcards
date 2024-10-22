@@ -4,19 +4,19 @@ from flask_login import LoginManager, UserMixin, login_user, login_required, log
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin
 from db import PostgresDB
-from models import Cards, Transactions
+from models import Cards, Transactions, WorkerPin, CustomerPin
 import os
 import uuid
 from datetime import datetime, timezone
 import pandas as pd
 
 # Load environment variables
-username = os.environ.get('username')
-password = os.environ.get('password')
-host = os.environ.get('host')
-port = os.environ.get('port')
-database = os.environ.get('database')
-sslmode = os.environ.get('sslmode')
+username = os.environ['DBUSERNAME']
+password = os.environ['PASSWORD']
+host = os.environ['HOST']
+port = os.environ['PORT']
+database =os.environ['DATABASE']
+sslmode = os.environ['SSLMODE']
 
 # db = PostgresDB(
 #     username=username,
@@ -99,7 +99,11 @@ def scan():
 def process_card(card_id):
     trans = pd.DataFrame(db.session.query(Transactions.amount, Transactions.transaction_type, Transactions.added)
                        .filter(Transactions.card_id == card_id).all(), columns=['amount', 'transaction_type', 'transaction_date'])
-    
+    this_pin = db.session.query(CustomerPin.pin).filter(CustomerPin.card_id == card_id).all()
+    if len(this_pin) > 0:
+        has_pin = True
+    else:
+        has_pin = False
     if len(trans) == 0:
         return render_template("cards.html", balance=0, trans=dict(), card_id=card_id)
     t_d = list()
@@ -112,7 +116,7 @@ def process_card(card_id):
 
     cur_bal = trans['amount'].sum()
     print("Scanning.")
-    return render_template("cards.html", balance=cur_bal, trans=t_d, card_id=card_id)
+    return render_template("cards.html", balance=cur_bal, trans=t_d, card_id=card_id, pin_created=has_pin)
 
 @app.route('/process_card_admin/<card_id>', methods=['GET', 'POST'])
 @login_required  # Require login to access this page
@@ -121,7 +125,7 @@ def process_card_admin(card_id):
                        .filter(Transactions.card_id == card_id).all(), columns=['amount', 'transaction_type', 'transaction_date'])
     
     if len(trans) == 0:
-        return render_template("cards.html", balance=0, trans=dict(), card_id=card_id)
+        return render_template("cards_admin.html", balance=0, trans=dict(), card_id=card_id)
     t_d = list()
     for i, r in trans.iterrows():
         if r.transaction_type.strip() == 'add':
@@ -135,6 +139,17 @@ def process_card_admin(card_id):
     return render_template("cards_admin.html", balance=cur_bal, trans=t_d, card_id=card_id)
 
 
+
+@app.route('/save_pin/', methods=['GET', 'POST'])
+@login_required  # Require login to access this page
+def save_pin():
+    card_id = request.form.get('card_id')
+    phone = request.form.get('phoneNumber')
+    pin = request.form.get('pinNumber')
+    fi = CustomerPin(phone_number=int(phone), pin=int(pin), card_id=card_id, added=datetime.now(timezone.utc))
+    db.session.add(fi)
+    db.session.commit()
+    return redirect(url_for('process_card', card_id=card_id, pin_created=True))
 
 @app.route('/add_transaction')
 @login_required  # Require login to access this page
@@ -153,6 +168,33 @@ def register_expense():
 @app.route('/register_abono/', methods=['GET', 'POST'])
 @login_required  # Require login to access this page
 def register_abono():
+    card_id = request.args.get('card_id')
+    return render_template("register_abono.html", card_id=card_id, error=False)
+
+
+@app.route('/save_abono/', methods=['GET', 'POST'])
+@login_required  # Require login to access this page
+def save_abono():
+    card_id = request.form.get('card_id')
+    pin = request.form.get('pin')
+    amount = request.form.get('amount')
+    if pin is not None:
+        pin = int(pin)
+        all_pins = pd.DataFrame(db.session.query(WorkerPin.pin).all(), columns=['pin'])
+        all_pins = [int(x) for x in all_pins.pin.tolist()]
+        if pin not in all_pins:
+            print(pin)
+            return render_template("register_abono.html", card_id=card_id, error="true")
+        else:
+            amount = int(amount)
+            fi = Transactions(card_id= card_id, transaction_type = 'Abono', added=datetime.now(timezone.utc), amount=amount)
+            db.session.add(fi)
+            db.session.commit()
+
+            return redirect(url_for('process_card_admin', card_id=card_id))
+
+
+
     card_id = request.args.get('card_id')
     print(card_id)
 
@@ -173,6 +215,6 @@ def save_expense():
 
 
 # Run app locally
-local =False
+local = True
 if local:
     app.run(debug=True, host="0.0.0.0", port=8080, threaded=True, use_reloader=True)

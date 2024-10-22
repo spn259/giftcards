@@ -47,3 +47,26 @@ class User(Base):
     id =Column(Integer, primary_key=True)
     username = Column(String(255), unique=True, nullable=False)
     password = Column(String(255), nullable=False)
+
+
+
+class WorkerPin(Base):
+    __tablename__ = "worker_pin"
+    __table_args__ = {"schema": "public", "extend_existing": True}
+
+    id = Column(BigInteger, primary_key=True)
+    worker_name = Column(String, nullable=False)
+    pin = Column(Integer, nullable=False)
+    added = Column(DateTime, nullable=False)
+
+
+class CustomerPin(Base):
+    __tablename__ = "customer_pin"
+    __table_args__ = {"schema": "public", "extend_existing": True}
+
+    id = Column(BigInteger, primary_key=True)
+    phone_number = Column(Integer, nullable=False)
+    pin = Column(Integer, nullable=False)
+    card_id = Column(String, nullable=False)
+    added = Column(DateTime, nullable=False)
+
