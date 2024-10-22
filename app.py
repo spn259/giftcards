@@ -150,6 +150,14 @@ def register_expense():
 
     return render_template("register_expense.html", card_id=card_id)
 
+@app.route('/register_abono/', methods=['GET', 'POST'])
+@login_required  # Require login to access this page
+def register_abono():
+    card_id = request.args.get('card_id')
+    print(card_id)
+
+    return render_template("register_abono.html", card_id=card_id)
+
 @app.route('/save_expense/', methods=['GET', 'POST'])
 @login_required  # Require login to access this page
 def save_expense():
@@ -165,6 +173,6 @@ def save_expense():
 
 
 # Run app locally
-local = False
+local = True
 if local:
     app.run(debug=True, host="0.0.0.0", port=8080, threaded=True, use_reloader=True)

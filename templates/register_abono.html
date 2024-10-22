@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  {% extends 'base.html' %}
+
+  {% block title %}
+  Registrar Abono
+  {% endblock %}
+
+  {% block content %}
+  
+  <!-- Bootstrap CSS and JS already included in base.html -->
+</head>
+<body>
+  <div class="container py-5">
+    <!-- Page Header -->
+    <div class="row mb-4">
+      <div class="col text-center">
+        <h2 class="mb-3">Registrar Abono</h2>
+      </div>
+    </div>
+
+    <!-- Form Section -->
+    <div class="row justify-content-center">
+      <div class="col-md-6">
+        <div class="card shadow-lg">
+          <div class="card-body">
+            <form method="POST" action="{{ url_for('save_expense') }}">
+              <input type="hidden" name="card_id" value="{{ card_id }}">
+              
+              <div class="mb-3">
+                <label for="amount" class="form-label">Cantidad</label>
+                <input type="number" class="form-control" id="amount" name="amount" placeholder="Ingresa la cantidad" required>
+              </div>
+
+              <div class="mb-3">
+                <label for="pin" class="form-label">PIN</label>
+                <input type="tel" pattern="[0-9]*" inputmode="numeric" class="form-control" id="pin" name="pin" placeholder="Enter your PIN" required>              </div>
+
+              <button type="submit" class="btn btn-primary w-100">Registrar</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+
+{% endblock %}

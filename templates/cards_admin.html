@@ -22,8 +22,8 @@
     <!-- Buttons for Abonar and Registrar Gasto -->
     <div class="row mb-4">
       <div class="col-md-6 d-flex justify-content-start">
-        <a href="{{ url_for('add_transaction') }}" class="btn btn-primary me-2">Abonar</a>
-        <a href="{{ url_for('register_expense', card_id=card_id) }}" class="btn btn-secondary">Registrar Gasto</a>    </div>
+        <a href="{{ url_for('register_expense', card_id=card_id) }}" class="btn btn-primary me-2">Abonar</a>
+        <a href="{{ url_for('register_abono', card_id=card_id) }}" class="btn btn-secondary">Registrar Gasto</a>    </div>
 
     <!-- Current Balance Section -->
     <div class="row mb-4">
