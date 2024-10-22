@@ -14,7 +14,7 @@ import pandas as pd
 username = os.environ['DBUSERNAME']
 password = os.environ['PASSWORD']
 host = os.environ['HOST']
-port = os.environ['PORT']
+port = 25060
 database =os.environ['DATABASE']
 sslmode = os.environ['SSLMODE']
 
