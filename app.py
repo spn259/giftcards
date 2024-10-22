@@ -116,7 +116,7 @@ def process_card(card_id):
 
 @app.route('/process_card_admin/<card_id>', methods=['GET', 'POST'])
 @login_required  # Require login to access this page
-def process_card(card_id):
+def process_card_admin(card_id):
     trans = pd.DataFrame(db.session.query(Transactions.amount, Transactions.transaction_type, Transactions.added)
                        .filter(Transactions.card_id == card_id).all(), columns=['amount', 'transaction_type', 'transaction_date'])
     
