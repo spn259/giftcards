@@ -147,7 +147,6 @@ def process_card_admin(card_id):
 
 
 @app.route('/save_pin/', methods=['GET', 'POST'])
-@login_required  # Require login to access this page
 def save_pin():
     card_id = request.form.get('card_id')
     phone = request.form.get('phoneNumber')
@@ -156,6 +155,7 @@ def save_pin():
     db.session.add(fi)
     db.session.commit()
     return redirect(url_for('process_card', card_id=card_id, pin_created=True))
+
 
 @app.route('/add_transaction')
 @login_required  # Require login to access this page
