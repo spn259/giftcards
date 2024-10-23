@@ -114,7 +114,7 @@ def process_card(card_id):
         return render_template("cards.html", balance=0, trans=dict(), card_id=card_id)
     t_d = list()
     for i, r in trans.iterrows():
-        if r.transaction_type.strip() == 'add':
+        if r.transaction_type.strip().lower() == 'abono':
             t_type = 'Abono'
         else:
             t_type = 'Gasto'
@@ -134,7 +134,7 @@ def process_card_admin(card_id):
         return render_template("cards_admin.html", balance=0, trans=dict(), card_id=card_id)
     t_d = list()
     for i, r in trans.iterrows():
-        if r.transaction_type.strip() == 'add':
+        if r.transaction_type.strip().lower() == 'abono':
             t_type = 'Abono'
         else:
             t_type = 'Gasto'
@@ -168,8 +168,14 @@ def add_transaction():
 def register_expense():
     card_id = request.args.get('card_id')
     print(card_id)
+    custo_pin = db.session.query(CustomerPin.pin).filter(CustomerPin.card_id == card_id).all()
+    print(custo_pin)
+    if len(custo_pin) > 0:
+        has_pin = True
+    else:
+        has_pin = False
 
-    return render_template("register_expense.html", card_id=card_id)
+    return render_template("register_expense.html", card_id=card_id, pin_created=has_pin)
 
 @app.route('/register_abono/', methods=['GET', 'POST'])
 @login_required  # Require login to access this page
@@ -211,13 +217,19 @@ def save_abono():
 def save_expense():
     card_id = request.form.get('card_id')
     amount = request.form.get('amount')
+    custo_pin = db.session.query(CustomerPin.pin).filter(CustomerPin.card_id == card_id).all()
+    if len(custo_pin) > 0:
+        pin = request.form.get('pin')
+        if int(pin) != int(custo_pin[0][0]):
+            return render_template("register_expense.html", card_id=card_id, error=True, pin_created=True)
+
     amount = float(amount)
     amount = -amount
-    fi = Transactions(card_id = card_id, transaction_type='expense',  added=datetime.now(timezone.utc), amount=amount)
+    fi = Transactions(card_id = card_id, transaction_type='Gasto',  added=datetime.now(timezone.utc), amount=amount)
     db.session.add(fi)
     db.session.commit()
 
-    return redirect(url_for('process_card', card_id=card_id))  # Pass the ID as a parameter
+    return redirect(url_for('process_card_admin', card_id=card_id))  # Pass the ID as a parameter
 
 
 # Run app locally

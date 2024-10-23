@@ -26,6 +26,14 @@
       </div>
     </div>
 
+      <!-- Conditional Alert for Error -->
+      {% if error %}
+      <div class="alert alert-warning alert-dismissible fade show" role="alert">
+        Hubo un error. Revisa que el PIN del cliente sea correcto
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+      {% endif %}
+
     <!-- Form Section -->
     <div class="row justify-content-center">
       <div class="col-md-6">
@@ -38,6 +46,13 @@
                 <label for="amount" class="form-label">Cantidad</label>
                 <input type="number" class="form-control" id="amount" name="amount" placeholder="Ingresa la cantidad" required>
               </div>
+
+              {% if pin_created %}  
+              <div class="mb-3">
+                <label for="pin" class="form-label">PIN</label>
+                <input type="tel" pattern="[0-9]*" inputmode="numeric" class="form-control" id="pin" name="pin" placeholder="PIN del cliente" required>              </div>
+                {% endif %}
+
               <button type="submit" class="btn btn-primary w-100">Registrar</button>
             </form>
           </div>
