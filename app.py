@@ -175,7 +175,12 @@ def register_expense():
     else:
         has_pin = False
 
-    return render_template("register_expense.html", card_id=card_id, pin_created=has_pin)
+    trans = pd.DataFrame(db.session.query(Transactions.amount, Transactions.transaction_type, Transactions.added)
+                    .filter(Transactions.card_id == card_id).all(), columns=['amount', 'transaction_type', 'transaction_date'])
+  
+    cur_bal = trans['amount'].sum()
+
+    return render_template("register_expense.html", card_id=card_id, pin_created=has_pin, cur_bal=cur_bal)
 
 @app.route('/register_abono/', methods=['GET', 'POST'])
 @login_required  # Require login to access this page
@@ -217,11 +222,19 @@ def save_abono():
 def save_expense():
     card_id = request.form.get('card_id')
     amount = request.form.get('amount')
+    trans = pd.DataFrame(db.session.query(Transactions.amount, Transactions.transaction_type, Transactions.added)
+                    .filter(Transactions.card_id == card_id).all(), columns=['amount', 'transaction_type', 'transaction_date'])
+  
+    cur_bal = trans['amount'].sum()
     custo_pin = db.session.query(CustomerPin.pin).filter(CustomerPin.card_id == card_id).all()
     if len(custo_pin) > 0:
         pin = request.form.get('pin')
         if int(pin) != int(custo_pin[0][0]):
-            return render_template("register_expense.html", card_id=card_id, error=True, pin_created=True)
+            return render_template("register_expense.html", card_id=card_id, error=True, pin_created=True, cur_bal=cur_bal)
+        
+
+    if float(amount) > cur_bal:
+        return render_template("register_expense.html", card_id=card_id, error=False, bal_error=True, pin_created=True, cur_bal=cur_bal)
 
     amount = float(amount)
     amount = -amount

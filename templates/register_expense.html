@@ -3,18 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  
   {% extends 'base.html' %}
 
   {% block title %}
   Registrar Gasto
   {% endblock %}
-
   {% block content %}
-  
+
+  <style>
+    .card-header {
+      background-color: #007bff;  /* Bootstrap primary color */
+      color: white;  /* White text color */
+      padding: 10px 20px;  /* Padding for aesthetic spacing */
+    }
+    .card-title {
+      margin-bottom: 0;  /* Remove bottom margin for cleaner look */
+    }
+  </style>
+
   <!-- Bootstrap CSS (Already included in base.html) -->
   <!-- Bootstrap JS (Optional, if you need JavaScript functionality for buttons) -->
-
 </head>
 
 <body>
@@ -26,23 +34,32 @@
       </div>
     </div>
 
-      <!-- Conditional Alert for Error -->
-      {% if error %}
-      <div class="alert alert-warning alert-dismissible fade show" role="alert">
-        Hubo un error. Revisa que el PIN del cliente sea correcto
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-      </div>
-      {% endif %}
+    <!-- Conditional Alerts -->
+    {% if error %}
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+      Hubo un error. Revisa que el PIN del cliente sea correcto
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
+    {% if bal_error %}
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+      Fondos insuficientes
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
 
     <!-- Form Section -->
     <div class="row justify-content-center">
       <div class="col-md-6">
         <div class="card shadow-lg">
+          <div class="card-header">
+              <h4 class="card-title text-center">Fondos Disponibles: <strong>${{ cur_bal }}</strong></h4>
+          </div>
           <div class="card-body">
             <form method="POST" action="{{ url_for('save_expense') }}">
-                <input type="hidden" name="card_id" value="{{ card_id }}">
+              <input type="hidden" name="card_id" value="{{ card_id }}">
               <div class="mb-3">
-                
                 <label for="amount" class="form-label">Cantidad</label>
                 <input type="number" class="form-control" id="amount" name="amount" placeholder="Ingresa la cantidad" required>
               </div>
@@ -50,9 +67,10 @@
               {% if pin_created %}  
               <div class="mb-3">
                 <label for="pin" class="form-label">PIN</label>
-                <input type="password" id="pin" name="pin" placeholder="Ingresa tu pin" required
-                inputmode="numeric" pattern="[0-9]*">           </div>
-                {% endif %}
+                <input type="password" id="pin" name="pin" placeholder="Ingresa tu PIN" required
+                inputmode="numeric" pattern="[0-9]*">
+              </div>
+              {% endif %}
 
               <button type="submit" class="btn btn-primary w-100">Registrar</button>
             </form>
@@ -61,8 +79,6 @@
       </div>
     </div>
   </div>
-
 </body>
 </html>
-
 {% endblock %}
