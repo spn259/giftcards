@@ -41,14 +41,16 @@ var html5QrcodeScanner = new Html5QrcodeScanner(
 function onScanSuccess(decodedText, decodedResult) {
     // Log the scanned result
     console.log(`Scan result: ${decodedText}`, decodedResult);
+
+    var uuid =decodedText.split('/').pop();
     
     // Assuming the QR code contains a UUID or some identifier
     const data = {
-        uuid: decodedText
+        uuid: uuid
     };
 
     // Construct the URL to redirect to, using the scanned data
-    let proc_url = `/process_card/${decodedText}`;
+    let proc_url = `/process_card_admin/${uuid}`;
     html5QrcodeScanner.clear();
 
     window.location.href = proc_url;
