@@ -50,7 +50,8 @@
               {% if pin_created %}  
               <div class="mb-3">
                 <label for="pin" class="form-label">PIN</label>
-                <input type="password" pattern="[0-9]*" inputmode="numeric" class="form-control" id="pin" name="pin" placeholder="PIN del cliente" required>              </div>
+                <input type="password" id="pin" name="pin" placeholder="Ingresa tu pin" required
+                inputmode="numeric" pattern="[0-9]*">           </div>
                 {% endif %}
 
               <button type="submit" class="btn btn-primary w-100">Registrar</button>
