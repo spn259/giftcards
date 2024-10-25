@@ -57,7 +57,7 @@
               <h4 class="card-title text-center">Fondos Disponibles: <strong>${{ cur_bal }}</strong></h4>
           </div>
           <div class="card-body">
-            <form method="POST" action="{{ url_for('save_expense') }}">
+            <form method="POST" action="{{ url_for('save_expense') }}"  autocomplete="off">
               <input type="hidden" name="card_id" value="{{ card_id }}">
               <div class="mb-3">
                 <label for="amount" class="form-label">Cantidad</label>
@@ -67,7 +67,7 @@
               {% if pin_created %}  
               <div class="mb-3">
                 <label for="pin" class="form-label">PIN</label>
-                <input type="pin" id="pin" name="pin" placeholder="Ingresa tu PIN" required
+                <input type="pin" id="pin" name="pin" placeholder="Ingresa el PIN del cliente" required
                 inputmode="numeric" pattern="[0-9]*">
               </div>
               {% endif %}
