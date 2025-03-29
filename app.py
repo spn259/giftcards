@@ -10,6 +10,11 @@ import uuid
 from datetime import datetime, timezone
 import pandas as pd
 
+from flask import Flask, request, render_template, jsonify
+import base64
+import re
+import os
+
 # Load environment variables
 username = os.environ['DBUSERNAME']
 password = os.environ['PASSWORD']
@@ -244,8 +249,32 @@ def save_expense():
 
     return redirect(url_for('process_card_admin', card_id=card_id))  # Pass the ID as a parameter
 
+# Route that serves the feedback page
+@app.route('/feedback')
+def feedback():
+    # You can serve a template here or return a string with HTML.
+    return render_template('feedback.html')
 
+# Route that receives the photo and feedback from the client
+@app.route('/upload_photo', methods=['POST'])
+def upload_photo():
+    data = request.get_json()
+    image_data = data.get('image')
+    feedback = data.get('feedback', 'unknown')
+
+    # Remove the data URL prefix (e.g., "data:image/png;base64,")
+    image_data = re.sub('^data:image/.+;base64,', '', image_data)
+    image_bytes = base64.b64decode(image_data)
+
+    # Create a filename. You might want to add timestamps or unique IDs.
+    filename = f"{feedback}_photo.png"
+
+    # Save the file (you'll likely want to store it in a dedicated folder)
+    with open(filename, 'wb') as f:
+        f.write(image_bytes)
+
+    return "Photo received!", 200
 # Run app locally
-local = False
+local = True
 if local:
     app.run(debug=True, host="0.0.0.0", port=8080, threaded=True, use_reloader=True)
