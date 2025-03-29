@@ -311,6 +311,6 @@ def view_photos():
 def thankyou():
     return render_template('thankyou.html')
 # Run app locally
-local = False
+local = True
 if local:
     app.run(debug=True, host="0.0.0.0", port=8080, threaded=True, use_reloader=True)
