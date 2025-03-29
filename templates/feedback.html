@@ -13,9 +13,21 @@ Customer Feedback
   </div>
   <!-- Hidden video preview (for capturing the image) -->
   <video id="video" autoplay playsinline class="d-none"></video>
-  <!-- Hidden canvas for drawing the captured image -->
+  <!-- Hidden canvas (for drawing the captured image) -->
   <canvas id="canvas" class="d-none"></canvas>
 </div>
+
+<button id="fullscreenBtn" class="btn btn-primary">Go Fullscreen</button>
+
+<script>
+  document.getElementById('fullscreenBtn').addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+      });
+    }
+  });
+</script>
 
 <script>
   // Flag to track if a selection (manual or auto) has been made.
@@ -61,8 +73,10 @@ Customer Feedback
     .then(response => response.text())
     .then(data => {
       console.log(data);
-      // Redirect to the thank-you page.
-      window.location.href = '/thankyou';
+      // Only redirect if the feedback was manually provided.
+      if (feedbackType !== AUTO_FEEDBACK) {
+        window.location.href = '/thankyou';
+      }
     })
     .catch(err => {
       console.error("Error uploading photo:", err);
@@ -102,7 +116,7 @@ Customer Feedback
         });
     }, 1000);
   } else {
-    // Fallback: Auto-capture after 10 seconds if no feedback is given.
+    // Fallback: Auto-capture after 10 seconds if no manual feedback is given.
     console.warn("FaceDetector API not supported; using timer fallback.");
     setTimeout(() => {
       if (!selectionMade) {
