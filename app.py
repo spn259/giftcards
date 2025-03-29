@@ -256,6 +256,12 @@ def feedback():
     return render_template('feedback.html')
 
 # Route that receives the photo and feedback from the client
+import re
+import base64
+from flask import request
+from app import app, db  # Adjust the import as needed for your project structure
+from models import Photo  # Assuming your Photo model is defined in models.py
+
 @app.route('/upload_photo', methods=['POST'])
 def upload_photo():
     data = request.get_json()
@@ -266,14 +272,40 @@ def upload_photo():
     image_data = re.sub('^data:image/.+;base64,', '', image_data)
     image_bytes = base64.b64decode(image_data)
 
-    # Create a filename. You might want to add timestamps or unique IDs.
+    # Create a filename (you may include a timestamp or unique ID if needed)
     filename = f"{feedback}_photo.png"
 
-    # Save the file (you'll likely want to store it in a dedicated folder)
-    with open(filename, 'wb') as f:
-        f.write(image_bytes)
+    # Create an instance of the Photo model
+    new_photo = Photo(
+        filename=filename,
+        photo=image_bytes,
+        feedback=feedback
+    )
+
+    # Save the photo record to the database
+    db.session.add(new_photo)
+    db.session.commit()
 
     return "Photo received!", 200
+
+import base64
+from flask import render_template
+from app import app, db  # Adjust these imports based on your project structure
+from models import Photo
+
+@app.route('/view_photos')
+def view_photos():
+    # Retrieve all photos from the database (ordering can be adjusted as needed)
+    dphotos = db.session.query(Photo).all()
+
+    # Convert each photo's binary data to a base64-encoded string for HTML display
+    for dphoto in dphotos:
+        if dphoto.photo:
+            dphoto.base64 = base64.b64encode(dphoto.photo).decode('utf-8')
+        else:
+            dphoto.base64 = ""
+    return render_template('view_photos.html', photos=dphotos)
+
 
 @app.route('/thankyou')
 def thankyou():

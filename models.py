@@ -19,6 +19,25 @@ from sqlalchemy.sql.selectable import FromClause, Alias, Lateral
 Base = declarative_base()
 
 
+from sqlalchemy import Column, Integer, String, Text, LargeBinary, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+import datetime
+
+Base = declarative_base()
+
+class Photo(Base):
+    __tablename__ = 'feedback'
+
+    id = Column(Integer, primary_key=True)
+    filename = Column(String(255))
+    photo = Column(LargeBinary)  # Stores binary image data (BYTEA in PostgreSQL)
+    feedback = Column(Text)
+    added = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+
+    def __repr__(self):
+        return f"<Photo(id={self.id}, filename='{self.filename}', created_at={self.created_at})>"
+
+
 class Cards(Base):
     __tablename__ = "cards"
     __table_args__ = {"schema": "public", "extend_existing": True}

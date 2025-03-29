@@ -5,11 +5,15 @@ Customer Feedback
 {% endblock %}
 
 {% block content %}
-<div class="container my-5 text-center">
-  <h1 class="mb-4">How was your experience?</h1>
-  <div class="mb-4">
-    <button id="happyBtn" class="btn btn-success btn-lg mx-2">😊</button>
-    <button id="sadBtn" class="btn btn-danger btn-lg mx-2">😞</button>
+<div id="feedbackContainer" class="container my-5 text-center">
+  <!-- Fullscreen Button: Visible only if not in full screen -->
+  <button id="fullscreenBtn" type="button" class="btn btn-primary mb-3">Go Fullscreen</button>
+  <div id="originalFeedback">
+    <h1 class="mb-4">How was your experience?</h1>
+    <div class="mb-4">
+      <button id="happyBtn" class="btn btn-success btn-lg mx-2" type="button">😊</button>
+      <button id="sadBtn" class="btn btn-danger btn-lg mx-2" type="button">😞</button>
+    </div>
   </div>
   <!-- Hidden video preview (for capturing the image) -->
   <video id="video" autoplay playsinline class="d-none"></video>
@@ -17,52 +21,115 @@ Customer Feedback
   <canvas id="canvas" class="d-none"></canvas>
 </div>
 
-<button id="fullscreenBtn" class="btn btn-primary">Go Fullscreen</button>
-
 <script>
-  document.getElementById('fullscreenBtn').addEventListener('click', () => {
+  /*********************
+   * Fullscreen Handling
+   *********************/
+  function checkFullscreen() {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(err => {
-        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
-      });
+      document.getElementById('fullscreenBtn').style.display = 'block';
+    } else {
+      document.getElementById('fullscreenBtn').style.display = 'none';
     }
+  }
+  document.addEventListener('fullscreenchange', checkFullscreen);
+  checkFullscreen();
+  document.getElementById('fullscreenBtn').addEventListener('click', function() {
+    document.documentElement.requestFullscreen()
+      .then(() => {
+        // Fullscreen event listener will hide the button.
+      })
+      .catch(err => {
+        console.error('Error enabling fullscreen:', err);
+      });
   });
-</script>
 
-<script>
-  // Flag to track if a selection (manual or auto) has been made.
+  /*********************
+   * Feedback & Auto-Capture
+   *********************/
+  // Global flag to track whether a submission is in progress.
   let selectionMade = false;
   const AUTO_FEEDBACK = 'auto';
 
-  // Use the front-facing camera
-  const constraints = {
-    video: { facingMode: "user" },
-    audio: false
-  };
-
+  // Get video and canvas elements.
   const video = document.getElementById('video');
   const canvas = document.getElementById('canvas');
   const context = canvas.getContext('2d');
 
-  // Request camera access and stream to the video element.
+  // Request camera access.
+  const constraints = { video: { facingMode: "user" }, audio: false };
   navigator.mediaDevices.getUserMedia(constraints)
-    .then(stream => {
-      video.srcObject = stream;
-    })
-    .catch(err => {
-      console.error("Error accessing camera:", err);
+    .then(stream => { video.srcObject = stream; })
+    .catch(err => { console.error("Error accessing camera:", err); });
+
+  // Save the original feedback HTML so it can be restored.
+  const originalFeedbackHTML = document.getElementById('originalFeedback').innerHTML;
+
+  // Attach event listeners to manual feedback buttons.
+  function attachEventListeners() {
+    document.getElementById('happyBtn').addEventListener('click', () => {
+      captureAndSend('happy');
     });
+    document.getElementById('sadBtn').addEventListener('click', () => {
+      captureAndSend('sad');
+    });
+  }
+  attachEventListeners();
 
-  // Capture the current frame and send it along with feedback type to the server.
+  // Variables for auto-capture.
+  let autoCaptureInterval;
+  let faceDetector;
+  if ('FaceDetector' in window) {
+    faceDetector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+  }
+
+  // Setup auto-capture logic.
+  function setupAutoCapture() {
+    // Clear any existing interval.
+    if (autoCaptureInterval) {
+      clearInterval(autoCaptureInterval);
+    }
+    if (faceDetector) {
+      autoCaptureInterval = setInterval(() => {
+        if (selectionMade) {
+          clearInterval(autoCaptureInterval);
+          return;
+        }
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        faceDetector.detect(canvas)
+          .then(faces => {
+            if (faces.length > 0) {
+              console.log("Face detected, auto-capturing...");
+              captureAndSend(AUTO_FEEDBACK);
+              clearInterval(autoCaptureInterval);
+            }
+          })
+          .catch(err => {
+            console.error("Face detection error:", err);
+          });
+      }, 1000);
+    } else {
+      // Fallback: auto-capture after 10 seconds.
+      setTimeout(() => {
+        if (!selectionMade) {
+          console.log("Auto-capturing after timer fallback.");
+          captureAndSend(AUTO_FEEDBACK);
+        }
+      }, 10000);
+    }
+  }
+  // Initialize auto-capture on page load.
+  setupAutoCapture();
+
+  // Function to capture the image and send feedback via AJAX.
   function captureAndSend(feedbackType) {
-    if (selectionMade) return; // Prevent duplicate captures.
+    if (selectionMade) return;
     selectionMade = true;
-
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // Convert canvas to a base64 image.
     const dataUrl = canvas.toDataURL('image/png');
 
     fetch('/upload_photo', {
@@ -73,57 +140,26 @@ Customer Feedback
     .then(response => response.text())
     .then(data => {
       console.log(data);
-      // Only redirect if the feedback was manually provided.
       if (feedbackType !== AUTO_FEEDBACK) {
-        window.location.href = '/thankyou';
+        // For manual feedback, show thank-you message.
+        document.getElementById('originalFeedback').innerHTML = `
+          <h1 class="mb-4">Thank you for your feedback!</h1>
+          <p>You will be returned shortly...</p>
+        `;
+        // After 3 seconds, restore the original feedback UI and reinitialize auto-capture.
+        setTimeout(() => {
+          document.getElementById('originalFeedback').innerHTML = originalFeedbackHTML;
+          attachEventListeners();
+          selectionMade = false;
+          setupAutoCapture();
+        }, 3000);
+      } else {
+        // For auto-capture, simply reset the flag and reinitialize auto-capture.
+        selectionMade = false;
+        setupAutoCapture();
       }
     })
-    .catch(err => {
-      console.error("Error uploading photo:", err);
-    });
-  }
-
-  // Manual feedback button handlers.
-  document.getElementById('happyBtn').addEventListener('click', () => {
-    captureAndSend('happy');
-  });
-  document.getElementById('sadBtn').addEventListener('click', () => {
-    captureAndSend('sad');
-  });
-
-  // AUTO-CAPTURE: Check for a face if no manual selection is made.
-  if ('FaceDetector' in window) {
-    const faceDetector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
-    const autoCaptureInterval = setInterval(() => {
-      if (selectionMade) {
-        clearInterval(autoCaptureInterval);
-        return;
-      }
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      faceDetector.detect(canvas)
-        .then(faces => {
-          if (faces.length > 0) {
-            console.log("Face detected, auto-capturing...");
-            captureAndSend(AUTO_FEEDBACK);
-            clearInterval(autoCaptureInterval);
-          }
-        })
-        .catch(err => {
-          console.error("Face detection error:", err);
-        });
-    }, 1000);
-  } else {
-    // Fallback: Auto-capture after 10 seconds if no manual feedback is given.
-    console.warn("FaceDetector API not supported; using timer fallback.");
-    setTimeout(() => {
-      if (!selectionMade) {
-        console.log("Auto-capturing after timer fallback.");
-        captureAndSend(AUTO_FEEDBACK);
-      }
-    }, 10000);
+    .catch(err => { console.error("Error uploading photo:", err); });
   }
 </script>
 {% endblock %}
