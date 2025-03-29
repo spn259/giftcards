@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block navbar %}{% endblock %}  {# Remove the nav bar by overriding its block #}
+{% block navbar %}{% endblock %}
 {% block title %}Customer Feedback{% endblock %}
 
 {% block content %}
@@ -20,7 +20,7 @@
     margin-top: 2rem;
   }
   h1 {
-    color: #f15a24; /* Match a warm accent color (like your donut theme) */
+    color: #f15a24; /* Warm accent color */
     margin-bottom: 1.5rem;
   }
   /* Fullscreen button styling */
@@ -34,7 +34,7 @@
     cursor: pointer;
     margin-bottom: 1rem;
   }
-  /* Adjust image button styling */
+  /* Image button styling */
   #happyBtn, #sadBtn {
     background: none;
     border: none;
@@ -65,12 +65,11 @@
     <h1>How was your experience?</h1>
     <div class="mb-4">
       <!-- "Happy" button (Super) -->
-      <button id="happyBtn" type="button">
+      <button id="happyBtn" type="button" style="background:none; border:none; padding:0; cursor:pointer;">
         <img src="{{ url_for('static', filename='super.png') }}" alt="Happy">
       </button>
-
       <!-- "Sad" button (Mal) -->
-      <button id="sadBtn" type="button">
+      <button id="sadBtn" type="button" style="background:none; border:none; padding:0; cursor:pointer;">
         <img src="{{ url_for('static', filename='mal.png') }}" alt="Sad">
       </button>
     </div>
@@ -97,7 +96,7 @@
   document.getElementById('fullscreenBtn').addEventListener('click', function() {
     document.documentElement.requestFullscreen()
       .then(() => {
-        // Fullscreen button will be hidden by the fullscreenchange event.
+        // Fullscreen button will hide via fullscreenchange event.
       })
       .catch(err => {
         console.error('Error enabling fullscreen:', err);
@@ -110,6 +109,7 @@
   let selectionMade = false;
   const AUTO_FEEDBACK = 'auto';
 
+  // Video & Canvas setup
   const video = document.getElementById('video');
   const canvas = document.getElementById('canvas');
   const context = canvas.getContext('2d');
@@ -119,10 +119,7 @@
     .then(stream => { video.srcObject = stream; })
     .catch(err => { console.error("Error accessing camera:", err); });
 
-  // Save the original HTML of the feedback container.
-  const originalFeedbackHTML = document.getElementById('originalFeedback').innerHTML;
-
-  // Attach click event listeners to the feedback buttons.
+  // Function to attach click listeners to the image buttons.
   function attachEventListeners() {
     document.getElementById('happyBtn').addEventListener('click', () => {
       captureAndSend('happy');
@@ -131,9 +128,59 @@
       captureAndSend('sad');
     });
   }
-  attachEventListeners();
 
-  // Capture the current frame from the video and send it via AJAX.
+  // Setup auto-capture interval (we'll store its ID so we can reset it).
+  let autoCaptureInterval;
+
+  function setupAutoCapture() {
+    if (autoCaptureInterval) {
+      clearInterval(autoCaptureInterval);
+    }
+    if ('FaceDetector' in window) {
+      const faceDetector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+      autoCaptureInterval = setInterval(() => {
+        if (selectionMade) {
+          clearInterval(autoCaptureInterval);
+          return;
+        }
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        faceDetector.detect(canvas)
+          .then(faces => {
+            if (faces.length > 0) {
+              console.log("Face detected, auto-capturing...");
+              captureAndSend(AUTO_FEEDBACK);
+              clearInterval(autoCaptureInterval);
+            }
+          })
+          .catch(err => { console.error("Face detection error:", err); });
+      }, 1000);
+    } else {
+      console.warn("FaceDetector API not supported; using timer fallback.");
+      setTimeout(() => {
+        if (!selectionMade) {
+          console.log("Auto-capturing after timer fallback.");
+          captureAndSend(AUTO_FEEDBACK);
+        }
+      }, 10000);
+    }
+  }
+
+  // Function to initialize (or reinitialize) the feedback UI.
+  const originalFeedbackHTML = document.getElementById('originalFeedback').innerHTML;
+  function initializeFeedbackUI() {
+    document.getElementById('originalFeedback').innerHTML = originalFeedbackHTML;
+    attachEventListeners();
+    selectionMade = false;
+    setupAutoCapture();
+  }
+
+  // Initially attach listeners and start auto-capture.
+  attachEventListeners();
+  setupAutoCapture();
+
+  // Function to capture the image and send feedback.
   function captureAndSend(feedbackType) {
     if (selectionMade) return;
     selectionMade = true;
@@ -151,51 +198,18 @@
     .then(response => response.text())
     .then(data => {
       console.log(data);
-      // If the user manually provided feedback (not auto-captured), swap the UI.
+      // For manual feedback, swap the UI.
       if (feedbackType !== AUTO_FEEDBACK) {
         document.getElementById('originalFeedback').innerHTML = `
           <h1>Thank you for your feedback!</h1>
           <p>You will be returned shortly...</p>
         `;
         setTimeout(() => {
-          document.getElementById('originalFeedback').innerHTML = originalFeedbackHTML;
-          attachEventListeners();
-          selectionMade = false;
+          initializeFeedbackUI();
         }, 3000);
       }
     })
     .catch(err => { console.error("Error uploading photo:", err); });
-  }
-
-  // AUTO-CAPTURE: Use the FaceDetector API if available.
-  if ('FaceDetector' in window) {
-    const faceDetector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
-    const autoCaptureInterval = setInterval(() => {
-      if (selectionMade) {
-        clearInterval(autoCaptureInterval);
-        return;
-      }
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      faceDetector.detect(canvas)
-        .then(faces => {
-          if (faces.length > 0) {
-            console.log("Face detected, auto-capturing...");
-            captureAndSend(AUTO_FEEDBACK);
-            clearInterval(autoCaptureInterval);
-          }
-        })
-        .catch(err => { console.error("Face detection error:", err); });
-    }, 1000);
-  } else {
-    console.warn("FaceDetector API not supported; using timer fallback.");
-    setTimeout(() => {
-      if (!selectionMade) {
-        console.log("Auto-capturing after timer fallback.");
-        captureAndSend(AUTO_FEEDBACK);
-      }
-    }, 10000);
   }
 </script>
 {% endblock %}
