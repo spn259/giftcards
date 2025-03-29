@@ -61,6 +61,8 @@ Customer Feedback
     .then(response => response.text())
     .then(data => {
       console.log(data);
+      // Redirect to the thank-you page.
+      window.location.href = '/thankyou';
     })
     .catch(err => {
       console.error("Error uploading photo:", err);

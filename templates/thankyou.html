@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}
+Thank You
+{% endblock %}
+
+{% block content %}
+<div class="container my-5 text-center">
+  <h1 class="mb-4">Thank you for your feedback!</h1>
+  <p>You will be redirected shortly...</p>
+</div>
+
+<script>
+  // After 3 seconds, redirect back to the feedback page.
+  setTimeout(() => {
+    window.location.href = '/feedback';
+  }, 3000);
+</script>
+{% endblock %}

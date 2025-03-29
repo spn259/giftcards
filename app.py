@@ -274,7 +274,11 @@ def upload_photo():
         f.write(image_bytes)
 
     return "Photo received!", 200
+
+@app.route('/thankyou')
+def thankyou():
+    return render_template('thankyou.html')
 # Run app locally
-local = True
+local = False
 if local:
     app.run(debug=True, host="0.0.0.0", port=8080, threaded=True, use_reloader=True)
