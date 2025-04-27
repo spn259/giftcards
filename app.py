@@ -27,7 +27,6 @@ import base64
 import re
 import os
 
-Load environment variables
 username = os.environ['DBUSERNAME']
 password = os.environ['PASSWORD']
 host = os.environ['HOST']
