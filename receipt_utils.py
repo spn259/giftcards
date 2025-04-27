@@ -18,8 +18,11 @@ from typing import List, Union, Iterable
 
 import fitz                          # PyMuPDF
 from openai import OpenAI
+import os
 
-openai_client = OpenAI(api_key='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')
+OPENAI_TOKEN = os.environ['OPENAI_TOKEN']
+
+openai_client = OpenAI(api_key=OPENAI_TOKEN)
 VISION_MODEL = "gpt-4.1-2025-04-14"   # Vision‑capable model (leave as‑is)
 
 # ---------------------------------------------------------------------------
