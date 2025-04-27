@@ -1,8 +1,20 @@
+
+
+# routes.py
+import json, logging
+from flask import request, jsonify, current_app
+from werkzeug.exceptions import BadRequest
+# routes.py (or app.py)
+import json, decimal, datetime
+from sqlalchemy.exc import SQLAlchemyError
+
 from flask import (Flask, jsonify, redirect, render_template, request, session,
-                   url_for, current_app, flash)
+                   url_for, current_app, flash, request, redirect, url_for, flash, jsonify)
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin
+
+from models import Expenses     
 from db import PostgresDB
 from models import Cards, Transactions, WorkerPin, CustomerPin
 import os
@@ -15,15 +27,49 @@ import base64
 import re
 import os
 
-# Load environment variables
+Load environment variables
 username = os.environ['DBUSERNAME']
 password = os.environ['PASSWORD']
 host = os.environ['HOST']
 port = 25060
 database =os.environ['DATABASE']
 sslmode = os.environ['SSLMODE']
+spaces_access_key = os.environ['spaces_access_key']
+spaces_key_id = os.environ['spaces_key_id']
+spaces_bucket_endpoint = os.environ['spaces_bucket_endpoint']
+spaces_bucket_name = os.environ['spaces_bucket_name']
+OPENAI_TOKEN = os.environ['OPENAI_TOKEN']
 
-print(username, password, host, port, database, sslmode)
+
+
+# storage.py
+import boto3, uuid, mimetypes
+from pathlib import Path
+
+_spaces = boto3.client(
+    "s3",
+    endpoint_url=spaces_bucket_endpoint,
+    aws_access_key_id=spaces_key_id,
+    aws_secret_access_key=spaces_access_key,
+)
+
+def upload_receipt(file_obj, expense_id: int) -> str:
+    """
+    Pushes `file_obj` to Spaces.
+    Returns the S3 key (you can build the public URL from it later).
+    """
+    ext   = Path(file_obj.filename).suffix.lower() or ".bin"
+    key   = f"expenses/{expense_id}/{uuid.uuid4().hex}{ext}"
+    mime  = file_obj.mimetype or mimetypes.guess_type(ext)[0] or "application/octet-stream"
+
+    _spaces.upload_fileobj(
+        file_obj,
+        spaces_bucket_name,
+        key,
+        ExtraArgs={"ContentType": mime, "ACL": "private"}   # or public-read
+    )
+    return key
+
 
 
 
@@ -259,7 +305,6 @@ def feedback():
 import re
 import base64
 from flask import request
-from app import app, db  # Adjust the import as needed for your project structure
 from models import Photo  # Assuming your Photo model is defined in models.py
 
 @app.route('/upload_photo', methods=['POST'])
@@ -290,7 +335,6 @@ def upload_photo():
 
 import base64
 from flask import render_template
-from app import app, db  # Adjust these imports based on your project structure
 from models import Photo
 
 @app.route('/view_photos')
@@ -310,6 +354,89 @@ def view_photos():
 @app.route('/thankyou')
 def thankyou():
     return render_template('thankyou.html')
+
+
+@app.route('/admin_log_expense', methods=['GET', 'POST'])
+def admin_log_expense():
+    return render_template('admin_registrar_gasto.html')
+
+@app.post("/extract_receipt_api")
+def extract_receipt_api():
+    from receipt_utils import extract_receipts
+    blobs = [f.read() for f in request.files.getlist("receipts")]
+    if not blobs:
+        return jsonify({"error": "no files"}), 400
+    return jsonify(json.loads(extract_receipts(blobs)))
+
+
+@app.route('/admin_registrar_gasto', methods=['GET', 'POST'])
+def admin_registrar_gasto():
+    """
+    Handles the final form submit from the detailsSection.
+    """
+    try:
+        # ── 1. Parse primitive fields ──────────────────────────────
+        amount_raw = request.form.get("amount", "0").replace(",", "")
+        amount     = float(decimal.Decimal(amount_raw))
+        vendor     = request.form.get("vendor", "").strip()
+        pay_meth   = request.form.get("payment_method")    # may be None
+        factura    = request.form.get("factura") == "si"
+
+        # From hidden input (add <input type=\"hidden\" name=\"raw_json\">)
+        details_json = request.form.get("raw_json") or "{}"
+        details      = json.loads(details_json)
+        print(details)
+
+        # Optional: allow manual date entry later
+        txn_date = details.get("date") or request.form.get("transaction_date")
+        txn_date = datetime.fromisoformat(txn_date) if txn_date else None
+
+        # ── 2. Insert expense row ──────────────────────────────────
+        expense = Expenses(
+            vendor=vendor,
+            amount=amount,
+            details=details,
+            transaction_date=txn_date,
+            submit_date=datetime.utcnow(),
+            factura=factura,
+            reference_file_paths=[],       # fill after uploads
+        )
+        db.session.add(expense)
+        db.session.flush()                 # get expense.id
+
+        # ── 3. Upload every file to Spaces ─────────────────────────
+        keys = []
+        for f in request.files.getlist("receipts"):
+            if not f or f.filename == "":
+                continue
+            key = upload_receipt(f, expense.id)
+            keys.append(key)
+
+        # ── 4. Update row with file paths & commit ─────────────────
+        expense.reference_file_paths = keys
+        db.session.commit()
+
+        print("Gasto guardado ✅", "success")
+        return redirect(url_for("admin_log_expense"))
+
+    except (ValueError, decimal.InvalidOperation):
+        db.session.rollback()
+        print("Monto inválido", "danger")
+        return redirect(url_for("admin_log_expense"))
+
+    except SQLAlchemyError:
+        db.session.rollback()
+        app.logger.exception("DB error saving expense")
+        print("Error de base de datos", "danger")
+        return redirect(url_for("admin_log_expense"))
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Unexpected error")
+        return jsonify({"error": "server_error", "details": str(e)}), 500
+
+
+
 # Run app locally
 local = False
 if local:

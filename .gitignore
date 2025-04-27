@@ -11,5 +11,6 @@ pdfs/
 # **/create_cards.py
 # **/create_users.py
 card_images.zip
+my_secrets.py
 **/.DS_Store
 **/.ipynb_checkpoints

@@ -89,3 +89,17 @@ class CustomerPin(Base):
     card_id = Column(String, nullable=False)
     added = Column(DateTime, nullable=False)
 
+class Expenses(Base):
+    __tablename__ = "expenses"
+    __table_args__ = {"schema": "public", "extend_existing": True}
+
+    id = Column(BigInteger, primary_key=True)
+    vendor = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    details = Column(JSONB, nullable=False)
+    transaction_date = Column(DateTime)
+    submit_date = Column(DateTime)
+    factura = Column(Boolean)
+    reference_file_paths = Column(JSONB)
+
+

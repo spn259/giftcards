@@ -14,4 +14,7 @@ psycopg2
 flask-login
 flask_sqlalchemy
 pandas
-
+pymupdf
+tools
+openai
+boto3

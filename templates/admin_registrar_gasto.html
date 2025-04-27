@@ -1,0 +1,212 @@
+{% extends 'base.html' %}
+
+{% block title %}
+Registrar Gasto
+{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+  <h2 class="text-center mb-4">Registrar Gasto</h2>
+
+  <!-- 1. Upload / manual choice -->
+  <div id="uploadSection">
+    <p class="mb-3">Sube una o varias fotos/PDFs del recibo y extraeremos los datos automáticamente,<br>o ingrésalos manualmente si prefieres.</p>
+
+    <input type="file" id="filePicker" accept="image/*,application/pdf" multiple hidden>
+    <button type="button" class="btn btn-outline-primary mb-2" id="addFilesBtn">Añadir archivos</button>
+
+    <div class="d-flex gap-2 mb-3">
+      <button type="button" class="btn btn-primary" id="extractBtn" disabled>Extraer datos</button>
+      <button type="button" class="btn btn-outline-secondary" id="manualBtn">Ingresar manualmente</button>
+    </div>
+
+    <div id="uploadPreviews" class="row row-cols-3 g-2"></div>
+  </div>
+
+  <!-- 2. Details form -->
+  <form id="detailsSection" method="POST" action="{{ url_for('admin_registrar_gasto') }}" enctype="multipart/form-data" class="mx-auto d-none" style="max-width:600px;">
+    {% if csrf_token %}{{ csrf_token() }}{% endif %}
+    <input type="hidden" id="raw_json" name="raw_json" value="{}">
+    <div id="hiddenImages"></div>
+
+    <div class="mb-3">
+      <label for="amount" class="form-label fw-semibold">Monto (MXN)</label>
+      <input type="number" step="0.01" min="0" class="form-control" id="amount" name="amount" required>
+    </div>
+
+    <div class="mb-3">
+      <label for="vendor" class="form-label fw-semibold">Proveedor</label>
+      <input type="text" class="form-control" id="vendor" name="vendor" required>
+    </div>
+
+    <div class="mb-3">
+      <label for="transaction_date" class="form-label fw-semibold">Fecha de la transacción</label>
+      <input type="date" class="form-control" id="transaction_date" name="transaction_date">
+    </div>
+
+    <div class="mb-3">
+      <label for="payment_method" class="form-label fw-semibold">Método de Pago</label>
+      <select id="payment_method" name="payment_method" class="form-select" required>
+        <option value="" disabled selected>Selecciona...</option>
+        <option value="efectivo">Efectivo</option>
+        <option value="tdc">Tarjeta</option>
+        <option value="transferencia">Transferencia</option>
+        <option value="otro">Otro</option>
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label fw-semibold d-block">¿Factura emitida?</label>
+      <div class="form-check form-check-inline">
+        <input class="form-check-input" type="radio" name="factura" id="factura_si" value="si" required>
+        <label class="form-check-label" for="factura_si">Sí</label>
+      </div>
+      <div class="form-check form-check-inline">
+        <input class="form-check-input" type="radio" name="factura" id="factura_no" value="no">
+        <label class="form-check-label" for="factura_no">No</label>
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label for="extra_details" class="form-label fw-semibold">Detalles opcionales</label>
+      <textarea class="form-control" id="extra_details" name="extra_details" rows="3" placeholder="Ej. descripción, categoría…"></textarea>
+    </div>
+
+    <div class="mb-4">
+      <label for="extra_docs" class="form-label fw-semibold">Más imágenes / documentos</label>
+      <input class="form-control" type="file" id="extra_docs" name="receipts" accept="image/*,application/pdf" multiple>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2">
+      <button type="button" class="btn btn-secondary" id="backBtn">Volver</button>
+      <button type="submit" class="btn btn-primary">Guardar Gasto</button>
+    </div>
+  </form>
+</div>
+
+<script>
+// -------------------- util --------------------
+const get = id => document.getElementById(id); // no clash with jQuery
+
+// -------------------- state & refs --------------------
+let selectedFiles = [];
+const picker          = get('filePicker');
+const addFilesBtn     = get('addFilesBtn');
+const extractBtn      = get('extractBtn');
+const manualBtn       = get('manualBtn');
+const uploadPreviews  = get('uploadPreviews');
+const uploadSection   = get('uploadSection');
+const detailsSection  = get('detailsSection');
+const hiddenImagesDiv = get('hiddenImages');
+const rawJsonInput    = get('raw_json');
+const backBtn         = get('backBtn');
+
+// -------------------- helpers --------------------
+function renderPreviews() {
+  uploadPreviews.innerHTML = '';
+  selectedFiles.slice(0, 9).forEach((f) => {
+    const col = document.createElement('div');
+    col.className = 'col';
+    const img = document.createElement('img');
+    img.className = 'img-fluid rounded border';
+    img.src = f.type.startsWith('image/') ? URL.createObjectURL(f) : 'https://via.placeholder.com/120x160?text=PDF';
+    col.appendChild(img);
+    uploadPreviews.appendChild(col);
+  });
+  extractBtn.disabled = !selectedFiles.length;
+}
+
+function cloneFilesToForm() {
+  hiddenImagesDiv.innerHTML = '';
+  selectedFiles.forEach((f) => {
+    const dt = new DataTransfer();
+    dt.items.add(f);
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.name = 'receipts';
+    input.files = dt.files;
+    input.classList.add('d-none');
+    hiddenImagesDiv.appendChild(input);
+  });
+}
+
+const payMap = {
+  credit: 'tdc',
+  credit_card: 'tdc',
+  tarjeta: 'tdc',
+  cash: 'efectivo',
+  efectivo: 'efectivo',
+  transfer: 'transferencia',
+  transferencia: 'transferencia',
+  other: 'otro',
+  otro: 'otro'
+};
+
+// -------------------- file picker --------------------
+addFilesBtn.addEventListener('click', () => picker.click());
+picker.addEventListener('change', () => {
+  selectedFiles = [...selectedFiles, ...picker.files];
+  picker.value = '';
+  renderPreviews();
+});
+
+// -------------------- manual --------------------
+manualBtn.addEventListener('click', () => {
+  cloneFilesToForm();
+  rawJsonInput.value = JSON.stringify({ manual: true });
+  uploadSection.classList.add('d-none');
+  detailsSection.classList.remove('d-none');
+});
+
+// -------------------- extraction --------------------
+extractBtn.addEventListener('click', async () => {
+  extractBtn.disabled = true;
+  extractBtn.textContent = 'Extrayendo…';
+  const fd = new FormData();
+  selectedFiles.forEach((f) => fd.append('receipts', f));
+
+  try {
+    const res = await fetch('{{ url_for("extract_receipt_api") }}', {
+      method: 'POST',
+      body: fd
+    });
+    if (!res.ok) throw new Error('Error al extraer datos');
+    const data = await res.json();
+    rawJsonInput.value = JSON.stringify(data);
+
+    const r = data.receipts?.[0] || (Array.isArray(data) ? data[0] : data) || {};
+    get('amount').value = r.amount_mxn ?? '';
+    get('vendor').value = r.vendor ?? '';
+
+    const dStr = r.date || r.transaction_date || r.details?.date;
+    if (dStr) {
+      const d = new Date(dStr);
+      if (!isNaN(d)) get('transaction_date').value = d.toISOString().slice(0, 10);
+    }
+
+    let pm = (r.payment_method || r.details?.payment_method || '').toString().toLowerCase();
+    pm = payMap[pm] || pm;
+    if (pm) get('payment_method').value = pm;
+
+    if (r.factura === true) get('factura_si').checked = true;
+    else if (r.factura === false) get('factura_no').checked = false;
+
+    if (r.items || r.category) get('extra_details').value = JSON.stringify(r.items ?? { category: r.category }, null, 2);
+
+    cloneFilesToForm();
+    uploadSection.classList.add('d-none');
+    detailsSection.classList.remove('d-none');
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    extractBtn.disabled = false;
+    extractBtn.textContent = 'Extraer datos';
+  }
+});
+
+backBtn.addEventListener('click', () => {
+  detailsSection.classList.add('d-none');
+  uploadSection.classList.remove('d-none');
+});
+</script>
+{% endblock %}
