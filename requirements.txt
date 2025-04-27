@@ -18,3 +18,4 @@ pymupdf
 tools
 openai
 boto3
+httpx==0.26.*
