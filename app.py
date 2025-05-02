@@ -606,6 +606,38 @@ def save_merma_counts():
         
 
         return "Products received"
+    
+@app.route('/merma_dashboard')
+def merma_dashboard():
+
+    cst = pytz.timezone("America/Mexico_City")
+    now_cst = datetime.now(cst)
+
+    start = request.args.get('start_date', now_cst)
+    end   = request.args.get('end_date', now_cst)
+
+
+    prod_count = pd.DataFrame(db.session.query(ProductionCounts.product_name, ProductionCounts.n_items.label('n_prod'))
+                              .filter(ProductionCounts.added.between(start, end))
+                              .all())
+    
+    merma_count = pd.DataFrame(db.session.query(MermaCounts.product_name, MermaCounts.n_items.label('n_merma'))
+                               .filter(MermaCounts.added.between(start, end))
+                               .all())
+    
+    if len(prod_count) == 0 or len(merma_count) == 0:
+        return render_template('merma_dashboard.html', data=list())
+
+        
+    m = prod_count.merge(merma_count, on='product_name', how='left')
+    # Query your ProductionCounts and MermaCounts models, join by product_name or menu_id
+    # Aggregate sums grouped by product_name within the date range.
+    # Build `data` as a list of objects/dicts with product_name, production_count, merma_count.
+    data = list()
+    for i, r in m.iterows():
+        d = {'production_count': r.n_prod, 'merma_count': r.n_merma, 'product_name': r.product_name}
+        data.append(d)
+    return render_template('merma_dashboard.html', data=d)
 
 # Run app locally
 if local:
