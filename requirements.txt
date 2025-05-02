@@ -21,3 +21,4 @@ boto3
 httpx==0.26.*
 python-dotenv
 pytz
+requests
