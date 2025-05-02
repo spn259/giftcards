@@ -103,3 +103,47 @@ class Expenses(Base):
     reference_file_paths = Column(JSONB)
 
 
+class PoloProducts(Base):
+    __tablename__ = "polo_products"
+    __table_args__ = {"schema": "public", "extend_existing": True}
+
+    id = Column(BigInteger, primary_key=True)
+    product_name = Column(String, nullable=False)
+    description = Column(String)
+    added = Column(DateTime)
+    polo_id = Column(String)
+ 
+class Menus(Base):
+    __tablename__ = "menus"
+    __table_args__ = {"schema": "public", "extend_existing": True}
+
+    id = Column(BigInteger, primary_key=True)
+    product_name = Column(String, nullable=False)
+    description = Column(String)
+    added = Column(DateTime)
+    menu_version = Column(String)
+    active = Column(Boolean)
+    price = Column(String)
+
+
+class ProductionCounts(Base):
+    __tablename__ = "production_counts"
+    __table_args__ = {"schema": "public", "extend_existing": True}
+
+    id = Column(BigInteger, primary_key=True)
+    product_name = Column(String, nullable=False)
+    n_items = Column(Integer)
+    added = Column(DateTime)
+    dough_amount = Column(String)
+
+class MermaCounts(Base):
+    __tablename__ = "merma_counts"
+    __table_args__ = {"schema": "public", "extend_existing": True}
+
+    id = Column(BigInteger, primary_key=True)
+    product_name = Column(String, nullable=False)
+    n_items = Column(Integer)
+    added = Column(DateTime)
+   
+
+

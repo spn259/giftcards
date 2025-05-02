@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+
+{% block head %}
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+{% endblock %}
+
+{% block title %}Registrar Merma{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 py-4">
+  <h2 class="text-center mb-4 fs-5">Merma Diaria</h2>
+
+  {% if menu_items %}
+  <form method="POST" action="{{ url_for('save_merma_counts') }}">
+    {% if csrf_token %}{{ csrf_token() }}{% endif %}
+
+    <div id="mermaList">
+      {% for item in menu_items %}
+      <div class="mb-4 text-center">
+        <!-- Product name -->
+        <div class="fw-semibold text-truncate">{{ item['product_name'] }}</div>
+
+        <!-- Controls centered under the name -->
+        <div class="d-inline-flex align-items-center gap-2 mt-2">
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm"
+            onclick="adjustMerma('{{ item['id'] }}', -1)"
+          >−</button>
+
+          <input
+            type="text"
+            id="merma_{{ item['id'] }}"
+            name="merma[{{ item['id'] }}]"
+            value="0"
+            class="form-control text-center p-0"
+            style="width: 50px; border: 1px solid #ccc; border-radius: 4px;"
+          >
+
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm"
+            onclick="adjustMerma('{{ item['id'] }}', 1)"
+          >+</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Submit button centered -->
+    <div class="d-flex justify-content-center mt-3">
+      <button type="submit" class="btn btn-primary px-4">Guardar Merma</button>
+    </div>
+  </form>
+  {% else %}
+    <p class="text-center text-muted">No hay elementos de menú para mostrar.</p>
+  {% endif %}
+</div>
+
+<script>
+function adjustMerma(id, delta) {
+  const input = document.getElementById(`merma_${id}`);
+  let v = parseInt(input.value.replace(/\D/g, ''), 10);
+  if (isNaN(v)) v = 0;
+  v = Math.max(0, v + delta);
+  input.value = v;
+}
+</script>
+{% endblock %}

@@ -20,6 +20,16 @@ import fitz                          # PyMuPDF
 from openai import OpenAI
 import os
 
+try:
+    from dotenv import load_dotenv
+    from pathlib import Path
+
+    # Force .env path based on script location
+    dotenv_path = Path(__file__).resolve().parent / '.env'
+    load_dotenv(dotenv_path=dotenv_path)
+except:
+    print("Failed to import")
+
 openai_token = os.environ['openai_token']
 
 openai_client = OpenAI(api_key=openai_token)
@@ -68,20 +78,15 @@ def to_data_uri(blob: bytes, mime: str = "image/jpeg") -> str:
 
 # ---------------------------------------------------------------------------
 SYSTEM_PROMPT = (
-    "These are my only personal receipts and conversations I am trying to register "
-    "You are an assistant that extracts structured JSON data from Mexican "
-    "purchase receipts. For every image you see, return ONE object with keys: "
-    "amount_mxn (float), vendor (string), payment_method (string), "
-    "factura (boolean), date (ISO-8601), category (string). "
-    "if one of the images is a BBVA transfer, use that as the transaction date and the payment method is bank transfer"
-    "if it is not, try to guess the payment type from these options: ['Transferencia', 'Tarjeta', 'Efectivo']"
-    "If the receipt is itemised, include an 'items' list with product, qty & price. "
+    "Given the following menu, extract out each menu item and its description and price. "
     "Return JSON only—no comments."
+    "Return data as a list of dictionary with these keys product_name:, 'description':, 'price'"
+    "the root key should be 'products' and then a list"
 )
 
 # ---------------------------------------------------------------------------
 
-def extract_receipts(inputs: List[FileLike]) -> str:
+def extract_products(inputs: List[FileLike]) -> str:
     """High‑level helper → returns *wrapped* JSON string ready for `json.loads()`."""
 
     # Expand every input (PDF/image) into one or more JPEG blobs
@@ -114,8 +119,20 @@ def extract_receipts(inputs: List[FileLike]) -> str:
 
     data = json.loads(content)
 
-    # Ensure we always return {"receipts": [...]} for front‑end consistency
-    if not isinstance(data, dict) or "receipts" not in data:
-        data = {"receipts": [data] if isinstance(data, dict) else data}
 
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+
+def grab_week_year():
+    from datetime import datetime
+    import pytz
+
+    cst = pytz.timezone("America/Mexico_City")  # or "US/Central" for U.S. CST
+    now_cst = datetime.now(cst)
+    iso = now_cst.isocalendar()
+    try:
+        week_year_str = f"{iso.year}-W{iso.week:02d}"  # Python 3.9+
+    except AttributeError:
+        year, week, _ = iso                           # Python < 3.9 fallback
+        week_year_str = f"{year}-W{week:02d}"
+    return week_year_str

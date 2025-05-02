@@ -16,7 +16,7 @@ from flask_login import LoginManager, UserMixin
 
 from models import Expenses     
 from db import PostgresDB
-from models import Cards, Transactions, WorkerPin, CustomerPin
+from models import Cards, Transactions, WorkerPin, CustomerPin, PoloProducts, Menus, ProductionCounts, MermaCounts
 import os
 import uuid
 from datetime import datetime, timezone
@@ -26,18 +26,33 @@ from flask import Flask, request, render_template, jsonify
 import base64
 import re
 import os
+from product_utils import grab_week_year
+from datetime import datetime
+import pytz
 
-username = os.environ['DBUSERNAME']
-password = os.environ['PASSWORD']
-host = os.environ['HOST']
+local = True
+if local:
+    from dotenv import load_dotenv
+    from pathlib import Path
+
+    # Force .env path based on script location
+    dotenv_path = Path(__file__).resolve().parent / '.env'
+    load_dotenv(dotenv_path=dotenv_path)
+
+# Load the .env file from the current directory
+
+
+username = os.environ['dbusername']
+password = os.environ['password']
+host = os.environ['host']
 port = 25060
-database =os.environ['DATABASE']
-sslmode = os.environ['SSLMODE']
+database = os.environ['database']
+sslmode = os.environ['sslmode']
 spaces_access_key = os.environ['spaces_access_key']
 spaces_key_id = os.environ['spaces_key_id']
 spaces_bucket_endpoint = os.environ['spaces_bucket_endpoint']
 spaces_bucket_name = os.environ['spaces_bucket_name']
-OPENAI_TOKEN = os.environ['OPENAI_TOKEN']
+openai_token = os.environ['openai_token']
 
 
 
@@ -434,9 +449,164 @@ def admin_registrar_gasto():
         app.logger.exception("Unexpected error")
         return jsonify({"error": "server_error", "details": str(e)}), 500
 
+from polo_utils import pull_polo_products
 
+@app.route('/refresh_products', methods=['GET', 'POST'])
+def refresh_products():
+
+    cur_prods = pd.DataFrame(db.session.query(PoloProducts.id, PoloProducts.product_name, PoloProducts.description).all())
+    polo_prods = pull_polo_products()
+    if len(cur_prods) == 0:
+        for item in polo_prods:
+            name, description, polo_id = item
+            fi = PoloProducts(product_name=name, description=description, polo_id=polo_id, 
+                         added=datetime.utcnow())
+            db.session.add(fi)
+        db.session.commit()
+    return jsonify({"added": True})
+
+@app.route('/upload_menu', methods=['GET', 'POST'])
+def upload_menu():
+    return render_template('scan_menu.html')
+
+@app.route('/extract_menu_api', methods=['POST'])
+def extract_menu_api():
+    from product_utils import extract_products
+
+    blobs = [f.read() for f in request.files.getlist("menu_files")]
+    if not blobs:
+        return jsonify({"error": "no files"}), 400
+    return jsonify(json.loads(extract_products(blobs)))
+    
+    # Extract product data from uploaded files
+    # Return JSON: {"products": [{"name": ..., "description": ..., "price": ...}, ...]}
+    pass
+@app.route('/save_menu_products', methods=['POST'])
+def save_menu_products():
+
+    wy = grab_week_year()
+
+    form_data = request.form
+
+    # Step 2: Extract all product indices
+    from collections import defaultdict
+    products = defaultdict(dict)
+
+    for full_key in form_data:
+        if full_key.startswith("products["):
+            # Example: products[0][name] ➜ index = 0, field = name
+            parts = full_key.replace("products[", "").replace("]", "").split("[")
+            if len(parts) == 2:
+                index, field = parts
+                products[int(index)][field] = form_data[full_key]
+
+    # Step 3: Convert defaultdict to regular list
+    product_list = [products[i] for i in sorted(products)]
+
+    # Optional: parse raw_json if needed
+    raw_json = form_data.get("raw_json")
+
+    db.session.query(Menus).update({'active': False})
+    db.session.commit()
+
+    # Example: print or save to DB
+    for product in product_list:
+        fi = Menus(product_name=product.get('name'), description = product.get('description'), 
+                   price=product.get('price'), added=datetime.utcnow(), menu_version=wy, active=True)
+        db.session.add(fi)
+    db.session.commit()
+    return "Products received"
+
+
+@app.route('/enter_production_counts', methods=['GET', 'POST'])
+def enter_production_counts():
+    menu_items = pd.DataFrame(db.session.query(Menus.product_name, Menus.id).filter(Menus.active == True).all())
+    d = list()
+    for i, r in menu_items.iterrows():
+        d.append({'product_name': r.product_name, 'id': r.id})
+
+    print(d)
+
+    return render_template('production_counts.html', menu_items=d)
+
+@app.route('/save_production_counts', methods=['GET', 'POST'])
+def save_production_counts():
+    masa_global = request.form.get('masa_global', type=int, default=1)
+    
+
+    cst = pytz.timezone("America/Mexico_City")
+    now_cst = datetime.now(cst)
+    menu_items = pd.DataFrame(db.session.query(Menus.id, Menus.product_name).filter(Menus.active == True).all())
+    id_to_prod = dict(zip(menu_items.id.tolist(), menu_items.product_name.tolist()))
+    if request.method == "POST":
+        counts_by_name = {}
+
+        # 1. Extract all form fields of the form counts[<product_name>]
+        for full_key, val in request.form.items():
+            if full_key.startswith('counts[') and full_key.endswith(']'):
+                # slice out what's between the brackets
+                name = full_key[len('counts['):-1]  
+                try:
+                    qty = int(val)
+                except (ValueError, TypeError):
+                    qty = 0
+                counts_by_name[int(name)] = qty
+            # Handle saving logic here
+        
+        for k, v in counts_by_name.items():
+            n = id_to_prod.get(k)
+            fi = ProductionCounts(product_name=n, n_items=v, added=now_cst, dough_amount= masa_global)
+            db.session.add(fi)
+        
+        db.session.commit()
+        
+
+        return "Products received"
+    
+
+@app.route('/enter_merma_counts', methods=['GET', 'POST'])
+def enter_merma_counts():
+    menu_items = pd.DataFrame(db.session.query(Menus.product_name, Menus.id).filter(Menus.active == True).all())
+    d = list()
+    for i, r in menu_items.iterrows():
+        d.append({'product_name': r.product_name, 'id': r.id})
+
+    print(d)
+
+    return render_template('merma_counts.html', menu_items=d)
+
+@app.route('/save_merma_counts', methods=['GET', 'POST'])
+def save_merma_counts():
+    
+    cst = pytz.timezone("America/Mexico_City")
+    now_cst = datetime.now(cst)
+    menu_items = pd.DataFrame(db.session.query(Menus.id, Menus.product_name).filter(Menus.active == True).all())
+    id_to_prod = dict(zip(menu_items.id.tolist(), menu_items.product_name.tolist()))
+    if request.method == "POST":
+        merma_counts = {}
+
+        # 1) Extract all form fields like "merma[15]" → {15: qty}
+        for key, val in request.form.items():
+            if key.startswith('merma[') and key.endswith(']'):
+                # pull out the ID between the brackets
+                id_str = key[len('merma['):-1]
+                try:
+                    item_id = int(id_str)
+                    qty     = int(val)
+                except (ValueError, TypeError):
+                    continue
+                merma_counts[item_id] = qty
+        
+        for k, v in merma_counts.items():
+            n = id_to_prod.get(k)
+            fi = MermaCounts(product_name=n, n_items=v, added=now_cst)
+            db.session.add(fi)
+        
+        db.session.commit()
+        
+
+        return "Products received"
 
 # Run app locally
-local = False
 if local:
     app.run(debug=True, host="0.0.0.0", port=8080, threaded=True, use_reloader=True)
