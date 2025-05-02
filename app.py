@@ -30,7 +30,7 @@ from product_utils import grab_week_year
 from datetime import datetime
 import pytz
 
-local = True
+local = False
 if local:
     from dotenv import load_dotenv
     from pathlib import Path
