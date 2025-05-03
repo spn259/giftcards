@@ -605,39 +605,152 @@ def save_merma_counts():
         db.session.commit()
         
 
-        return "Products received"
-    
+        return "Products received"    
+
+
 @app.route('/merma_dashboard')
 def merma_dashboard():
+    from datetime import datetime, time
+    import pytz 
+    # 1) Parse your CST‐aware date range (reuse your existing parsing logic)
+    cst     = pytz.timezone("America/Mexico_City")
+    now_cst = datetime.now(cst)
+    start_dt = request.args.get('start_date')
+    end_dt   = request.args.get('end_date')
+    # ... parse start_dt, end_dt from request.args or default like before ...
 
+    # 2) Load raw records into DataFrames
+    prod_df = pd.DataFrame(
+        db.session.query(
+            ProductionCounts.product_name,
+            ProductionCounts.n_items.label('n_prod')
+        )
+        .filter(ProductionCounts.added.between(start_dt, end_dt))
+        .all()
+    )
+
+    merma_df = pd.DataFrame(
+        db.session.query(
+            MermaCounts.product_name,
+            MermaCounts.n_items.label('n_merma'),
+            MermaCounts.added
+        )
+        .filter(MermaCounts.added.between(start_dt, end_dt))
+        .all()
+    )
+
+    # 3) Deduplicate merma_df by day if it’s non-empty
+    if not merma_df.empty:
+        merma_df['date'] = merma_df['added'].dt.date
+        merma_df = (
+            merma_df
+            .sort_values(['product_name','added'])
+            .drop_duplicates(subset=['product_name','date'], keep='last')
+            [['product_name','n_merma']]
+        )
+
+    # 4) Build the output list
+    data = []
+
+    prod_empty  = prod_df.empty
+    merma_empty = merma_df.empty
+
+    # Case A: neither has data
+    if prod_empty and merma_empty:
+        data = []
+
+    # Case B: only production
+    elif not prod_empty and merma_empty:
+        for _, row in prod_df.iterrows():
+            data.append({
+                'product_name':     row.product_name,
+                'production_count': row.n_prod,
+                'merma_count':      None
+            })
+
+    # Case C: only merma
+    elif prod_empty and not merma_empty:
+        for _, row in merma_df.iterrows():
+            data.append({
+                'product_name':     row.product_name,
+                'production_count': None,
+                'merma_count':      row.n_merma
+            })
+
+    # Case D: both exist → outer merge
+    else:
+        merged = pd.merge(
+            prod_df, merma_df,
+            on='product_name', how='outer'
+        )
+        for _, row in merged.iterrows():
+            data.append({
+                'product_name':     row.product_name,
+                'production_count': int(row.n_prod)   if pd.notna(row.n_prod)   else None,
+                'merma_count':      int(row.n_merma)  if pd.notna(row.n_merma)  else None
+            })
+
+    return render_template('merma_dashboard.html', data=data)
+
+
+@app.route('/expenses_dashboard')
+def expenses_dashboard():
+    # 1) Set up pytz CST zone and “now”
+    from datetime import datetime, time
+    import pytz
     cst = pytz.timezone("America/Mexico_City")
     now_cst = datetime.now(cst)
 
-    start = request.args.get('start_date', now_cst)
-    end   = request.args.get('end_date', now_cst)
+    # 2) Compute defaults in CST
+    default_start = now_cst.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    default_end   = now_cst.replace(hour=23, minute=59, second=59, microsecond=999999)
 
+    # 3) Read query‐params
+    start_str = request.args.get('start_date')
+    end_str   = request.args.get('end_date')
 
-    prod_count = pd.DataFrame(db.session.query(ProductionCounts.product_name, ProductionCounts.n_items.label('n_prod'))
-                              .filter(ProductionCounts.added.between(start, end))
-                              .all())
-    
-    merma_count = pd.DataFrame(db.session.query(MermaCounts.product_name, MermaCounts.n_items.label('n_merma'))
-                               .filter(MermaCounts.added.between(start, end))
-                               .all())
-    
-    if len(prod_count) == 0 or len(merma_count) == 0:
-        return render_template('merma_dashboard.html', data=list())
+    # 4) Parse or fall back
+    if start_str:
+        try:
+            dt = datetime.strptime(start_str, "%Y-%m-%d")
+            start_dt = cst.localize(datetime.combine(dt.date(), time.min))
+        except ValueError:
+            start_dt = default_start
+    else:
+        start_dt = default_start
 
-        
-    m = prod_count.merge(merma_count, on='product_name', how='left')
-    # Query your ProductionCounts and MermaCounts models, join by product_name or menu_id
-    # Aggregate sums grouped by product_name within the date range.
-    # Build `data` as a list of objects/dicts with product_name, production_count, merma_count.
-    data = list()
-    for i, r in m.iterows():
-        d = {'production_count': r.n_prod, 'merma_count': r.n_merma, 'product_name': r.product_name}
-        data.append(d)
-    return render_template('merma_dashboard.html', data=d)
+    if end_str:
+        try:
+            dt = datetime.strptime(end_str, "%Y-%m-%d")
+            end_dt = cst.localize(datetime.combine(dt.date(), time.max))
+        except ValueError:
+            end_dt = default_end
+    else:
+        end_dt = default_end
+
+    # 5) Query between those datetimes
+    expenses = (
+        db.session.query(Expenses)
+        .filter(
+            Expenses.transaction_date >= start_dt,
+            Expenses.transaction_date <= end_dt
+        )
+        .order_by(Expenses.transaction_date)
+        .all()
+    )
+
+    # 6) Compute total
+    total_amount = sum(e.amount for e in expenses)
+
+    # 7) Render, passing back the ISO‐dates for the form
+    return render_template(
+        'expense_dashboard.html',
+        data=expenses,
+        total_amount=total_amount,
+        start_date=start_dt.date().isoformat(),
+        end_date=end_dt.date().isoformat()
+    )
+
 
 # Run app locally
 if local:
