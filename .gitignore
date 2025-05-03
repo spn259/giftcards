@@ -8,6 +8,7 @@ pdfs/
 *.ai
 *.zip
 *.env
+.env
 # **/create_transactions.py
 # **/create_cards.py
 # **/create_users.py
