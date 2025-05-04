@@ -133,7 +133,7 @@ class ProductionCounts(Base):
     id = Column(BigInteger, primary_key=True)
     product_name = Column(String, nullable=False)
     n_items = Column(Integer)
-    added = Column(DateTime)
+    added = Column(DateTime(timezone=False))
     dough_amount = Column(String)
 
 class MermaCounts(Base):
@@ -143,7 +143,7 @@ class MermaCounts(Base):
     id = Column(BigInteger, primary_key=True)
     product_name = Column(String, nullable=False)
     n_items = Column(Integer)
-    added = Column(DateTime)
+    added = Column(DateTime(timezone=False))
    
 
 

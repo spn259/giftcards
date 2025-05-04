@@ -534,8 +534,11 @@ def save_production_counts():
     masa_global = request.form.get('masa_global', type=int, default=1)
     
 
+
     cst = pytz.timezone("America/Mexico_City")
     now_cst = datetime.now(cst)
+
+    naive_cst = now_cst.replace(tzinfo=None)
     menu_items = pd.DataFrame(db.session.query(Menus.id, Menus.product_name).filter(Menus.active == True).all())
     id_to_prod = dict(zip(menu_items.id.tolist(), menu_items.product_name.tolist()))
     if request.method == "POST":
@@ -555,7 +558,7 @@ def save_production_counts():
         
         for k, v in counts_by_name.items():
             n = id_to_prod.get(k)
-            fi = ProductionCounts(product_name=n, n_items=v, added=now_cst, dough_amount= masa_global)
+            fi = ProductionCounts(product_name=n, n_items=v, added=naive_cst, dough_amount= masa_global)
             db.session.add(fi)
         
         db.session.commit()
@@ -578,8 +581,16 @@ def enter_merma_counts():
 @app.route('/save_merma_counts', methods=['GET', 'POST'])
 def save_merma_counts():
     
+    import pytz
+    from datetime import datetime
+
+
+
     cst = pytz.timezone("America/Mexico_City")
     now_cst = datetime.now(cst)
+
+    naive_cst = now_cst.replace(tzinfo=None)
+
     menu_items = pd.DataFrame(db.session.query(Menus.id, Menus.product_name).filter(Menus.active == True).all())
     id_to_prod = dict(zip(menu_items.id.tolist(), menu_items.product_name.tolist()))
     if request.method == "POST":
@@ -599,7 +610,7 @@ def save_merma_counts():
         
         for k, v in merma_counts.items():
             n = id_to_prod.get(k)
-            fi = MermaCounts(product_name=n, n_items=v, added=now_cst)
+            fi = MermaCounts(product_name=n, n_items=v, added=naive_cst)
             db.session.add(fi)
         
         db.session.commit()
