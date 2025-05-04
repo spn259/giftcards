@@ -621,20 +621,37 @@ def save_merma_counts():
 
 @app.route('/merma_dashboard')
 def merma_dashboard():
-    from datetime import datetime, time
-    import pytz 
-    # 1) Parse your CST‐aware date range (reuse your existing parsing logic)
-    cst     = pytz.timezone("America/Mexico_City")
-    now_cst = datetime.now(cst)
-    start_dt = request.args.get('start_date')
-    end_dt   = request.args.get('end_date')
-    # ... parse start_dt, end_dt from request.args or default like before ...
 
-    # 2) Load raw records into DataFrames
+    from datetime import datetime, timedelta
+
+    # ---------- 1. Parse date parameters ----------
+    # Expect YYYY-MM-DD strings; if missing, default to today
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    start_str = request.args.get("start_date", today_str)
+    end_str   = request.args.get("end_date", start_str)  # default: same day
+
+    try:
+        start_date = datetime.strptime(start_str, "%Y-%m-%d").date()
+    except ValueError:
+        start_date = datetime.today().date()
+
+    try:
+        end_date = datetime.strptime(end_str, "%Y-%m-%d").date()
+    except ValueError:
+        end_date = start_date
+
+    # start_dt → 00:00 local CST, naive
+    start_dt = datetime.combine(start_date, datetime.min.time())
+
+    # end_dt  → 00:00 of day AFTER end_date (exclusive upper bound)
+    end_dt   = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+
+    # ---------- 2. Query DB ----------
     prod_df = pd.DataFrame(
         db.session.query(
             ProductionCounts.product_name,
-            ProductionCounts.n_items.label('n_prod')
+            ProductionCounts.n_items.label("n_prod")
         )
         .filter(ProductionCounts.added.between(start_dt, end_dt))
         .all()
@@ -643,66 +660,50 @@ def merma_dashboard():
     merma_df = pd.DataFrame(
         db.session.query(
             MermaCounts.product_name,
-            MermaCounts.n_items.label('n_merma'),
+            MermaCounts.n_items.label("n_merma"),
             MermaCounts.added
         )
         .filter(MermaCounts.added.between(start_dt, end_dt))
         .all()
     )
 
-    # 3) Deduplicate merma_df by day if it’s non-empty
+    # ---------- 3. Deduplicate merma by day ----------
     if not merma_df.empty:
-        merma_df['date'] = merma_df['added'].dt.date
+        merma_df["date"] = merma_df["added"].dt.date
         merma_df = (
-            merma_df
-            .sort_values(['product_name','added'])
-            .drop_duplicates(subset=['product_name','date'], keep='last')
-            [['product_name','n_merma']]
+            merma_df.sort_values(["product_name", "added"])
+                     .drop_duplicates(subset=["product_name", "date"], keep="last")
+                     [["product_name", "n_merma"]]
         )
 
-    # 4) Build the output list
+    # ---------- 4. Merge / build data ----------
     data = []
 
-    prod_empty  = prod_df.empty
-    merma_empty = merma_df.empty
+    if prod_df.empty and merma_df.empty:
+        pass  # leave data = []
 
-    # Case A: neither has data
-    if prod_empty and merma_empty:
-        data = []
+    elif not prod_df.empty and merma_df.empty:
+        for _, r in prod_df.iterrows():
+            data.append({"product_name": r.product_name,
+                         "production_count": r.n_prod,
+                         "merma_count": None})
 
-    # Case B: only production
-    elif not prod_empty and merma_empty:
-        for _, row in prod_df.iterrows():
-            data.append({
-                'product_name':     row.product_name,
-                'production_count': row.n_prod,
-                'merma_count':      None
-            })
+    elif prod_df.empty and not merma_df.empty:
+        for _, r in merma_df.iterrows():
+            data.append({"product_name": r.product_name,
+                         "production_count": None,
+                         "merma_count": r.n_merma})
 
-    # Case C: only merma
-    elif prod_empty and not merma_empty:
-        for _, row in merma_df.iterrows():
-            data.append({
-                'product_name':     row.product_name,
-                'production_count': None,
-                'merma_count':      row.n_merma
-            })
-
-    # Case D: both exist → outer merge
     else:
-        merged = pd.merge(
-            prod_df, merma_df,
-            on='product_name', how='outer'
-        )
-        for _, row in merged.iterrows():
+        merged = pd.merge(prod_df, merma_df, on="product_name", how="outer")
+        for _, r in merged.iterrows():
             data.append({
-                'product_name':     row.product_name,
-                'production_count': int(row.n_prod)   if pd.notna(row.n_prod)   else None,
-                'merma_count':      int(row.n_merma)  if pd.notna(row.n_merma)  else None
+                "product_name":     r.product_name,
+                "production_count": int(r.n_prod)  if pd.notna(r.n_prod)  else None,
+                "merma_count":      int(r.n_merma) if pd.notna(r.n_merma) else None
             })
 
-    return render_template('merma_dashboard.html', data=data)
-
+    return render_template("merma_dashboard.html", data=data)
 
 @app.route('/expenses_dashboard')
 def expenses_dashboard():
