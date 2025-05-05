@@ -30,7 +30,7 @@ from product_utils import grab_week_year
 from datetime import datetime
 import pytz
 
-local = False
+local = True
 if local:
     from dotenv import load_dotenv
     from pathlib import Path
@@ -453,14 +453,20 @@ from polo_utils import pull_polo_products
 
 @app.route('/refresh_products', methods=['GET', 'POST'])
 def refresh_products():
-
+    from polo_utils import pull_polo_mods
     cur_prods = pd.DataFrame(db.session.query(PoloProducts.id, PoloProducts.product_name, PoloProducts.description).all())
     polo_prods = pull_polo_products()
-    if len(cur_prods) == 0:
-        for item in polo_prods:
-            name, description, polo_id = item
-            fi = PoloProducts(product_name=name, description=description, polo_id=polo_id, 
-                         added=datetime.utcnow())
+    polo_prods = pd.DataFrame(polo_prods, columns=['name', 'description', 'polo_id'])
+    polo_prods['modifier'] = False
+    polo_mods = pull_polo_mods()
+    polo_mods = pd.DataFrame(polo_mods, columns=['name', 'description', 'polo_id'])
+    polo_mods['modifier'] = True
+
+    polo_prods = pd.concat([polo_prods, polo_mods]).reset_index(drop=True)
+
+    for i, r in polo_mods.iterrows():
+        if r.polo_id not in cur_prods.id.tolist():
+            fi = PoloProducts(product_name=r['name'], description=r.description, polo_id=r.polo_id, modifier=r.modifier, added=datetime.utcnow())
             db.session.add(fi)
         db.session.commit()
     return jsonify({"added": True})
@@ -623,6 +629,7 @@ def save_merma_counts():
 def merma_dashboard():
 
     from datetime import datetime, timedelta
+    from polo_utils import pull_polo_sales
 
     # ---------- 1. Parse date parameters ----------
     # Expect YYYY-MM-DD strings; if missing, default to today
@@ -647,6 +654,39 @@ def merma_dashboard():
     # end_dt  → 00:00 of day AFTER end_date (exclusive upper bound)
     end_dt   = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
 
+    # Example
+    resp = pull_polo_sales(start_str)      # any ISO date, or omit for today
+    df=  pd.DataFrame(resp.json()['orders'])
+    od = dict()
+    df=  pd.DataFrame(resp.json()['orders'])
+    for i, r in df.iterrows():
+        for item in r['orderItems']:
+            prod_id = item['cartItem']['productId']
+            cnt = item['cartItem']['quantity']
+            od[prod_id] = cnt
+            
+    all_prods = pd.DataFrame(db.session.query(Menus.product_name, Menus.description, Menus.id, Menus.polo_product_ids).filter(Menus.active == True).all())
+    all_polo = pd.DataFrame(db.session.query(PoloProducts.product_name, PoloProducts.modifier, PoloProducts.description, PoloProducts.id, PoloProducts.polo_id).all())
+    polo_to_uuid = dict(zip(all_polo.id.tolist(), all_polo.polo_id.tolist()))
+    polo_to_adc = dict()
+    for i, r in all_prods.iterrows():
+        for item in r.polo_product_ids:
+            uu = polo_to_uuid.get(item)
+            polo_to_adc[uu] = r['product_name']
+    final_polo_res = {x: 0 for x in all_prods.product_name.tolist()}
+    for k, v in od.items():
+        prod_name = polo_to_adc.get(k)
+        if pd.notnull(prod_name):
+            final_polo_res[prod_name]+= v
+            
+    l = list()
+    for k, v in final_polo_res.items():
+        l.append((k, v))
+        
+    polo_df = pd.DataFrame(l, columns=['product_name', 'n_items'])
+
+
+
     # ---------- 2. Query DB ----------
     prod_df = pd.DataFrame(
         db.session.query(
@@ -666,6 +706,8 @@ def merma_dashboard():
         .filter(MermaCounts.added.between(start_dt, end_dt))
         .all()
     )
+   
+
 
     # ---------- 3. Deduplicate merma by day ----------
     if not merma_df.empty:
@@ -675,33 +717,28 @@ def merma_dashboard():
                      .drop_duplicates(subset=["product_name", "date"], keep="last")
                      [["product_name", "n_merma"]]
         )
+    
+    data = list()
+    for i, r in polo_df.iterrows():
+        if len(merma_df) > 0:
+            tmp_merma= merma_df[merma_df.product_name == r.product_name]
+            n_merma = tmp_merma.iloc[0]['n_merma']
+        else:
+            n_merma = 0 
+        if len(prod_df) > 0:
+            tmp_prod = prod_df[prod_df.product_name == r.product_name]
+            n_prod = tmp_prod.iloc[0]['n_prod']
+        else:
+            n_prod = 0 
+       
+        data.append({'product_name':r.product_name, 
+                     'merma_count': n_merma, 
+                     'production_count': n_prod, 
+                     'sales_count': r.n_items}
+                    )
+       
+        
 
-    # ---------- 4. Merge / build data ----------
-    data = []
-
-    if prod_df.empty and merma_df.empty:
-        pass  # leave data = []
-
-    elif not prod_df.empty and merma_df.empty:
-        for _, r in prod_df.iterrows():
-            data.append({"product_name": r.product_name,
-                         "production_count": r.n_prod,
-                         "merma_count": None})
-
-    elif prod_df.empty and not merma_df.empty:
-        for _, r in merma_df.iterrows():
-            data.append({"product_name": r.product_name,
-                         "production_count": None,
-                         "merma_count": r.n_merma})
-
-    else:
-        merged = pd.merge(prod_df, merma_df, on="product_name", how="outer")
-        for _, r in merged.iterrows():
-            data.append({
-                "product_name":     r.product_name,
-                "production_count": int(r.n_prod)  if pd.notna(r.n_prod)  else None,
-                "merma_count":      int(r.n_merma) if pd.notna(r.n_merma) else None
-            })
 
     return render_template("merma_dashboard.html", data=data)
 
@@ -762,6 +799,106 @@ def expenses_dashboard():
         start_date=start_dt.date().isoformat(),
         end_date=end_dt.date().isoformat()
     )
+
+
+@app.route('/match_polo_products', methods=['GET', 'POST'])
+def match_polo_products():
+    all_prods = pd.DataFrame(db.session.query(Menus.product_name, Menus.description, Menus.id).filter(Menus.active == True).all())
+    all_polo = pd.DataFrame(db.session.query(PoloProducts.product_name, PoloProducts.modifier, PoloProducts.description, PoloProducts.id).all())
+
+    polo_d = list()
+    for i, r in all_polo.iterrows():
+        polo_d.append({'product_name': r.product_name, 'modifier': r.modifier, 'description': r.description, 'id': r['id']})
+        
+        prod_d = list()
+    for i, r in all_prods.iterrows():
+        prod_d.append({'product_name': r.product_name, 'description': r.description, 'id': r['id']})
+
+    prompt = """
+    For each product in the list Menu Items, try to match one or more products from the list Polo Products, 
+    output your matches as JSON list:
+
+    for example
+    "GLASEADA ORIGINAL": [{{name: name, id: id, modifier: modifier}}, {{name: name, id: id, modifier: modifier}}]
+
+    Most will have two matches, one non-modifier and one modifier, return the 2 best matches.
+
+    In the matches, include the polo id, and whether it is a modifier or not and name as keys
+
+    Polo products: {}
+    Menu products: {}
+
+
+    """
+
+    system_prompt = """Out put your answer as json
+    product: [{{"product_name": name}}, {{"product_id": prod_id}}]"""
+
+    this_prompt = prompt.format(polo_d, prod_d)
+    pull = True
+    if pull:
+
+        MODEL = "gpt-4.1-2025-04-14"
+        from openai import OpenAI
+        client = OpenAI(api_key=openai_token) 
+        kw = {"response_format": {"type": "json_object"}}
+
+        # Call the LLMclient.chat.completions.create
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": this_prompt}
+            ],
+            **kw
+        )
+
+        resp = json.loads(response.model_dump_json())
+        content = resp['choices'][0]['message']['content']
+        res = json.loads(content)
+    else:
+        res = {'GLASEADA ORIGINAL': [{'name': 'Dona Glaseada Original', 'id': 209, 'modifier': False}, {'name': 'Dona Glaseada Original', 'id': 234, 'modifier': True}], 'MAPLE TOCINO': [{'name': 'Dona de Maple Tocino', 'id': 176, 'modifier': False}, {'name': 'Maple Tocino', 'id': 242, 'modifier': True}], 'CHOCOLATE': [{'name': 'Dona de Chocolate', 'id': 156, 'modifier': False}, {'name': 'Dona de Chocolate', 'id': 240, 'modifier': True}], 'BLUEBERRY': [{'name': 'Dona con Glaseado de Blueberry', 'id': 52, 'modifier': False}, {'name': 'Dona con Glaseado de Blueberry', 'id': 239, 'modifier': True}], 'NUTELLA': [{'name': 'Dona Rellena Nutella', 'id': 44, 'modifier': False}, {'name': 'Dona Rellena Nutella', 'id': 237, 'modifier': True}], 'ZARZAMORA': [{'name': 'Dona Rellena Zarzamora', 'id': 152, 'modifier': False}, {'name': 'Dona Rellena Zarzamora', 'id': 227, 'modifier': True}], 'MATCHA': [{'name': 'Dona Rellena de Matcha', 'id': 31, 'modifier': False}, {'name': 'Dona Rellena de Matcha', 'id': 235, 'modifier': True}], 'CANELA TWIST': [{'name': 'Canela Twist', 'id': 162, 'modifier': False}, {'name': 'Canela Twist', 'id': 233, 'modifier': True}], 'OLD FASHION ZANAHORIA': [{'name': 'Old Fashion Zanahoria', 'id': 143, 'modifier': False}, {'name': 'Old Fashion Zanahoria', 'id': 230, 'modifier': True}], 'OLD FASHION CHOCOLATE': [{'name': 'Dona Old Fashion Chocolate', 'id': 105, 'modifier': False}, {'name': 'Dona Old Fashion Chocolate', 'id': 228, 'modifier': True}], 'APPLE FRITTER': [{'name': 'Apple Fritter', 'id': 57, 'modifier': False}, {'name': 'Apple Fritter', 'id': 238, 'modifier': True}], 'LONGJOHN MAPLE': [{'name': 'Maple Long John (Rellena de Crema)', 'id': 64, 'modifier': False}, {'name': 'Maple Long John (Rellena de Crema)', 'id': 229, 'modifier': True}], 'LONGJOHN CHOCOLATE': [{'name': 'Chocolate Long John (Rellena de Crema)', 'id': 45, 'modifier': False}, {'name': 'Chocolate Long John (Rellena de Crema)', 'id': 236, 'modifier': True}], 'PIZZA PUFF': [{'name': 'Pizza Puff', 'id': 231, 'modifier': True}, {'name': 'Pizza Dona', 'id': 83, 'modifier': False}], 'BEARCLAW MANZANA': [{'name': 'Bear Claw Manzana', 'id': 21, 'modifier': False}, {'name': 'Bearclaw Manzana', 'id': 241, 'modifier': True}]}
+
+
+    return render_template('match_polo_products.html', options=res)
+BRACKET_RE = re.compile(r"^modifiers\[(.+?)\]\[\]$")
+
+@app.route("/save_modifiers", methods=["POST"])
+def save_modifiers():
+    """
+    Build a dict:
+        {
+            "GLASEADA ORIGINAL": [209, 234],
+            "CHOCOLATE":        [240],  # etc.
+        }
+    from the check-box form.
+    """
+    selected = {}                       # product_name -> list[int]
+
+    # request.form is a MultiDict; iterate over keys
+    for field, values in request.form.lists():
+        m = BRACKET_RE.match(field)
+        if not m:
+            continue                    # skip unrelated fields (CSRF token…)
+
+        product_name = m.group(1)       # text inside the [ ... ]
+        # values is already a list of strings; convert to int
+        selected[product_name] = [int(v) for v in values if v.strip()]
+
+    # ---- do whatever you need with `selected` dict ----
+    # e.g. save to DB, log, etc.
+    print("User picked:", selected)
+
+    for k, v in selected.items():
+        db.session.query(Menus)\
+        .filter(Menus.product_name == k.strip())\
+        .filter(Menus.active == True)\
+        .update({'polo_product_ids': v})
+    db.session.commit()
+
+    flash("Modificadores guardados.", "success")
+    return "Products received"    
+
 
 
 # Run app locally

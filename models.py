@@ -112,6 +112,8 @@ class PoloProducts(Base):
     description = Column(String)
     added = Column(DateTime)
     polo_id = Column(String)
+    modifier = Column(Boolean)
+    fk_menu_ids = Column(JSONB)
  
 class Menus(Base):
     __tablename__ = "menus"
@@ -124,6 +126,7 @@ class Menus(Base):
     menu_version = Column(String)
     active = Column(Boolean)
     price = Column(String)
+    polo_product_ids = Column(JSONB)
 
 
 class ProductionCounts(Base):
