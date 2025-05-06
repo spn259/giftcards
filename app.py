@@ -30,7 +30,7 @@ from product_utils import grab_week_year
 from datetime import datetime
 import pytz
 
-local = True
+local = False
 if local:
     from dotenv import load_dotenv
     from pathlib import Path
@@ -655,8 +655,8 @@ def merma_dashboard():
     end_dt   = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
 
     # Example
-    resp = pull_polo_sales(start_str)      # any ISO date, or omit for today
-    df=  pd.DataFrame(resp.json()['orders'])
+    resp = pull_polo_sales(start_str)
+    print(resp.json())
     od = dict()
     df=  pd.DataFrame(resp.json()['orders'])
     for i, r in df.iterrows():
@@ -675,6 +675,7 @@ def merma_dashboard():
             polo_to_adc[uu] = r['product_name']
     final_polo_res = {x: 0 for x in all_prods.product_name.tolist()}
     for k, v in od.items():
+        print(k, v)
         prod_name = polo_to_adc.get(k)
         if pd.notnull(prod_name):
             final_polo_res[prod_name]+= v
@@ -682,6 +683,7 @@ def merma_dashboard():
     l = list()
     for k, v in final_polo_res.items():
         l.append((k, v))
+    print(final_polo_res)
         
     polo_df = pd.DataFrame(l, columns=['product_name', 'n_items'])
 
