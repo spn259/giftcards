@@ -30,7 +30,7 @@ from product_utils import grab_week_year
 from datetime import datetime
 import pytz
 
-local = False
+local = True
 if local:
     from dotenv import load_dotenv
     from pathlib import Path
@@ -127,6 +127,9 @@ def load_user(user_id):
 # User loader callback (used by Flask-Login to reload users from session
 # Routes
 
+@app.route('/main_landing', methods=['GET', 'POST'])
+def main_landing():
+    return render_template("main_landing.html")
 
 @app.route('/')
 def landing():
@@ -163,7 +166,6 @@ def logout():
 @app.route('/scan')
 @login_required  # Require login to access this page
 def scan():
-    print("Scanning.")
     return render_template("scan.html")
 
 @app.route('/process_card/<card_id>', methods=['GET', 'POST'])
@@ -399,7 +401,6 @@ def admin_registrar_gasto():
         # From hidden input (add <input type=\"hidden\" name=\"raw_json\">)
         details_json = request.form.get("raw_json") or "{}"
         details      = json.loads(details_json)
-        print(details)
 
         # Optional: allow manual date entry later
         txn_date = details.get("date") or request.form.get("transaction_date")
@@ -656,14 +657,16 @@ def merma_dashboard():
 
     # Example
     resp = pull_polo_sales(start_str)
-    print(resp.json())
     od = dict()
     df=  pd.DataFrame(resp.json()['orders'])
     for i, r in df.iterrows():
         for item in r['orderItems']:
             prod_id = item['cartItem']['productId']
             cnt = item['cartItem']['quantity']
-            od[prod_id] = cnt
+            if not od.get(prod_id):
+                od[prod_id] = cnt
+            else:
+                od[prod_id] = od[prod_id]+cnt
             
     all_prods = pd.DataFrame(db.session.query(Menus.product_name, Menus.description, Menus.id, Menus.polo_product_ids).filter(Menus.active == True).all())
     all_polo = pd.DataFrame(db.session.query(PoloProducts.product_name, PoloProducts.modifier, PoloProducts.description, PoloProducts.id, PoloProducts.polo_id).all())
@@ -675,7 +678,6 @@ def merma_dashboard():
             polo_to_adc[uu] = r['product_name']
     final_polo_res = {x: 0 for x in all_prods.product_name.tolist()}
     for k, v in od.items():
-        print(k, v)
         prod_name = polo_to_adc.get(k)
         if pd.notnull(prod_name):
             final_polo_res[prod_name]+= v
@@ -683,7 +685,6 @@ def merma_dashboard():
     l = list()
     for k, v in final_polo_res.items():
         l.append((k, v))
-    print(final_polo_res)
         
     polo_df = pd.DataFrame(l, columns=['product_name', 'n_items'])
 
@@ -724,12 +725,18 @@ def merma_dashboard():
     for i, r in polo_df.iterrows():
         if len(merma_df) > 0:
             tmp_merma= merma_df[merma_df.product_name == r.product_name]
-            n_merma = tmp_merma.iloc[0]['n_merma']
+            if len(tmp_merma) > 0:
+                n_merma = tmp_merma.iloc[0]['n_merma']
+            else:
+                n_merma = -1
         else:
             n_merma = 0 
         if len(prod_df) > 0:
             tmp_prod = prod_df[prod_df.product_name == r.product_name]
-            n_prod = tmp_prod.iloc[0]['n_prod']
+            if len(tmp_prod) > 0:
+                n_prod = tmp_prod.iloc[0]['n_prod']
+            else:
+                n_prod = -1
         else:
             n_prod = 0 
        
@@ -901,6 +908,109 @@ def save_modifiers():
     flash("Modificadores guardados.", "success")
     return "Products received"    
 
+# ── imports ────────────────────────────────────────────────────────
+from flask import render_template, abort, current_app
+import json, os, mimetypes, re
+import boto3
+from botocore.client import Config
+
+# db, login_required already imported elsewhere
+# routes.py  (add near your other routes)
+import io, os, json, mimetypes
+from flask import send_file, abort
+from botocore.exceptions import ClientError
+
+# --------------------------------------------
+#  Clean the key exactly as stored in DB
+# --------------------------------------------
+def clean_key(raw: str) -> str:
+    raw = raw.strip().lstrip("/")
+    if (raw.startswith('"') and raw.endswith('"')) or (raw.startswith("'") and raw.endswith("'")):
+        raw = raw[1:-1]
+    return raw
+
+from flask import Response, stream_with_context
+# ... existing imports ...
+
+@app.route("/expense/<int:expense_id>/receipt/<int:index>")
+@login_required
+def expense_receipt(expense_id: int, index: int):
+    """Stream one receipt (image or PDF). PDFs are forced inline."""
+    exp = db.session.get(Expenses, expense_id) or abort(404)
+
+    keys = exp.reference_file_paths or []
+    if isinstance(keys, str):
+        keys = json.loads(keys)
+
+    try:
+        key = clean_key(keys[index])
+    except IndexError:
+        abort(404)
+
+    # Grab object from Spaces
+    try:
+        obj = _spaces.get_object(Bucket=spaces_bucket_name, Key=key)
+    except _spaces.exceptions.NoSuchKey:
+        abort(404)
+
+    # Detect type from file-extension *only*
+    ext   = os.path.splitext(key)[1].lower()
+    is_pdf = ext == ".pdf"
+    mime   = "application/pdf" if is_pdf else \
+             mimetypes.guess_type(key)[0] or "application/octet-stream"
+
+    # Stream body so large files don’t sit in memory
+    body_iter = stream_with_context(obj["Body"].iter_chunks())
+
+    headers = {
+        "Content-Type":        mime,
+        "Content-Disposition": f'inline; filename="{os.path.basename(key)}"',
+        "Content-Length":      obj["ContentLength"],
+    }
+
+    # Build plain Response instead of send_file → full header control
+    return Response(body_iter, headers=headers)
+
+
+# ── route ──────────────────────────────────────────────────────────
+@app.route("/expense/<int:expense_id>")
+@login_required
+def expense_detail(expense_id: int):
+    exp = db.session.get(Expenses, expense_id)
+    if exp is None:
+        abort(404)
+
+    # 1. parse JSONB safely
+    details = exp.details if isinstance(exp.details, dict) else json.loads(exp.details or "{}")
+    items   = (details.get("receipts", [{}])[0]).get("items", [])
+
+    # 2. collect object paths
+    raw_keys = exp.reference_file_paths or []
+    if isinstance(raw_keys, str):
+        raw_keys = json.loads(raw_keys)
+
+    files = []
+    for i, raw in enumerate(raw_keys):
+        key  = clean_key(raw)
+        ext  = os.path.splitext(key)[1].lower()
+        mime = mimetypes.guess_type(key)[0] or ""
+        kind = "pdf" if mime == "application/pdf" else "image"
+        files.append({"idx": i, "kind": kind})
+
+    # Force correct MIME for PDFs
+    ext  = os.path.splitext(key)[1].lower()
+    mime = "application/pdf" if ext == ".pdf" else mimetypes.guess_type(key)[0] or "application/octet-stream"
+
+    obj  = _spaces.get_object(Bucket=spaces_bucket_name, Key=key)
+    data = io.BytesIO(obj["Body"].read())
+    # 3. render page
+    return render_template(
+        "expense_detail.html",
+        expense=exp,
+        details=details,
+        items=items,
+        files=files,
+    )
 
 
 # Run app locally

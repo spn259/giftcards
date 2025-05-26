@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+
+{% block head %}
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+{% endblock %}
+
+{% block title %}Panel Principal • ADC{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 py-4">
+  <h2 class="text-center mb-4 fs-5">Panel Principal</h2>
+
+  <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+
+    <!-- Scan Card -->
+    <div class="col">
+      <a href="{{ url_for('scan') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">Escanear Tarjeta</h5>
+            <p class="card-text small text-muted">Registra gastos y abonos con código QR</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Production Counts -->
+    <div class="col">
+      <a href="{{ url_for('enter_production_counts') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">Ingresar Producción</h5>
+            <p class="card-text small text-muted">Captura los conteos de producción del día</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Merma Counts -->
+    <div class="col">
+      <a href="{{ url_for('enter_merma_counts') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">Ingresar Merma</h5>
+            <p class="card-text small text-muted">Registra la merma diaria</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Production & Merma Dashboard -->
+    <div class="col">
+      <a href="{{ url_for('merma_dashboard') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">Dashboard Producción &amp; Merma</h5>
+            <p class="card-text small text-muted">Visualiza producción, ventas y merma</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Expenses Dashboard -->
+    <div class="col">
+      <a href="{{ url_for('expenses_dashboard') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">Dashboard Gastos</h5>
+            <p class="card-text small text-muted">Resumen mensual de gastos</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Registrar Gasto Manual -->
+    <div class="col">
+      <a href="{{ url_for('admin_log_expense') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">Registrar Gasto Manual</h5>
+            <p class="card-text small text-muted">Añade un gasto sin ticket</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Upload Menu -->
+    <div class="col">
+      <a href="{{ url_for('upload_menu') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">Subir Menú</h5>
+            <p class="card-text small text-muted">Digitaliza y publica un nuevo menú</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Match Polo Products -->
+    <div class="col">
+      <a href="{{ url_for('match_polo_products') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">Match Productos Polo</h5>
+            <p class="card-text small text-muted">Asocia productos del menú con el sistema POS</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- View Client Photos -->
+    <div class="col">
+      <a href="{{ url_for('view_photos') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">Feedback Fotográfico</h5>
+            <p class="card-text small text-muted">Revisa fotos y comentarios de clientes</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

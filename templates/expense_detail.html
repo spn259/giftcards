@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block head %}
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+{% endblock %}
+
+{% block title %}Expense #{{ expense.id }}{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+  <h2 class="fs-5 text-center mb-4">Expense #{{ expense.id }}</h2>
+
+  <!-- ── summary ── -->
+  <dl class="row">
+    <dt class="col-sm-3">Vendor</dt><dd class="col-sm-9">{{ expense.vendor }}</dd>
+    <dt class="col-sm-3">Amount</dt><dd class="col-sm-9">$ {{ "%.2f"|format(expense.amount) }}</dd>
+    <dt class="col-sm-3">Payment&nbsp;method</dt>
+    <dd class="col-sm-9">{{ details.receipts[0].payment_method if details.receipts else "—" }}</dd>
+    <dt class="col-sm-3">Transaction&nbsp;date</dt>
+    <dd class="col-sm-9">{{ expense.transaction_date.date() if expense.transaction_date else "—" }}</dd>
+    <dt class="col-sm-3">Recorded</dt>
+    <dd class="col-sm-9">{{ expense.submit_date.date() if expense.submit_date else "—" }}</dd>
+    <dt class="col-sm-3">Invoice</dt>
+    <dd class="col-sm-9">
+      {% if details.receipts and details.receipts[0].factura %}Yes{% else %}No{% endif %}
+    </dd>
+  </dl>
+
+  <!-- ── items (optional) ── -->
+  {% if items %}
+  <h5 class="mt-4">Items</h5>
+  <div class="table-responsive">
+    <table class="table table-sm table-striped align-middle">
+      <thead class="table-light">
+        <tr><th class="text-center">Qty</th><th>Product</th>
+            <th class="text-end">Price</th><th class="text-end">Subtotal</th></tr>
+      </thead>
+      <tbody>
+        {% for it in items %}
+        <tr>
+          <td class="text-center">{{ it.qty }}</td>
+          <td>{{ it.product }}</td>
+          <td class="text-end">{{ "%.2f"|format(it.price) }}</td>
+          <td class="text-end">{{ "%.2f"|format(it.qty * it.price) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- ── receipts ── -->
+  {% if files %}
+    <h5 class="mt-4">Receipts</h5>
+    <div class="row g-3">
+      {% for f in files %}
+        {% set src = url_for('expense_receipt',
+                             expense_id=expense.id,
+                             index=f.idx) %}
+        <div class="col-12 col-md-6">
+          {% if f.kind == 'image' %}
+            <a href="{{ src }}" target="_blank">
+              <img src="{{ src }}" class="img-fluid rounded shadow-sm w-100"
+                   alt="Receipt {{ loop.index }}">
+            </a>
+          {% else %}
+            <!-- single viewer request → no duplicate download -->
+            <embed src="{{ src }}" type="application/pdf"
+                   class="w-100 rounded shadow-sm border"
+                   style="min-height:600px;">
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="text-muted fst-italic">No receipts attached.</p>
+  {% endif %}
+
+</div>
+{% endblock %}

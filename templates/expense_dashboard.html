@@ -2,6 +2,10 @@
 
 {% block head %}
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable .arrow { font-size: .7rem; opacity: .6; }
+  </style>
 {% endblock %}
 
 {% block title %}Dashboard de Gastos{% endblock %}
@@ -10,15 +14,20 @@
 <div class="container-fluid px-3 py-4">
   <h2 class="text-center mb-4 fs-5">Dashboard de Gastos</h2>
 
-  <!-- Filtro de fechas -->
-  <form method="GET" action="{{ url_for('expenses_dashboard') }}" class="row g-3 mb-4 align-items-end justify-content-center">
+  <!-- Filtro de fechas (sin cambios) -->
+  <form method="GET" action="{{ url_for('expenses_dashboard') }}"
+        class="row g-3 mb-4 align-items-end justify-content-center">
     <div class="col-auto">
       <label for="start_date" class="form-label">Desde</label>
-      <input type="date" id="start_date" name="start_date" class="form-control" value="{{ request.args.get('start_date','') }}">
+      <input type="date" id="start_date" name="start_date"
+             class="form-control"
+             value="{{ request.args.get('start_date','') }}">
     </div>
     <div class="col-auto">
       <label for="end_date" class="form-label">Hasta</label>
-      <input type="date" id="end_date" name="end_date" class="form-control" value="{{ request.args.get('end_date','') }}">
+      <input type="date" id="end_date" name="end_date"
+             class="form-control"
+             value="{{ request.args.get('end_date','') }}">
     </div>
     <div class="col-auto">
       <button type="submit" class="btn btn-primary">Filtrar</button>
@@ -27,20 +36,29 @@
 
   {% if data %}
   <div class="table-responsive">
-    <table class="table table-striped table-hover">
+    <table id="expenseTable" class="table table-striped table-hover align-middle">
       <thead class="table-light">
         <tr>
-          <th>Proveedor</th>
-          <th class="text-end">Monto (MXN)</th>
-          <th class="text-center">Fecha Transacción</th>
+          <th class="sortable" data-type="text">Proveedor <span class="arrow"></span></th>
+          <th class="sortable text-end" data-type="number">Monto&nbsp;(MXN) <span class="arrow"></span></th>
+          <th class="sortable text-center" data-type="date">Fecha&nbsp;Transacción <span class="arrow"></span></th>
+          <th class="text-center">Ver</th>
         </tr>
       </thead>
       <tbody>
         {% for expense in data %}
         <tr>
           <td>{{ expense.vendor }}</td>
-          <td class="text-end">{{ "{:.2f}".format(expense.amount) }}</td>
-          <td class="text-center">{{ expense.transaction_date.strftime('%Y-%m-%d') if expense.transaction_date else '' }}</td>
+          <td class="text-end">{{ "%.2f"|format(expense.amount) }}</td>
+          <td class="text-center">
+            {{ expense.transaction_date.strftime('%Y-%m-%d') if expense.transaction_date else '' }}
+          </td>
+          <td class="text-center">
+            <a href="{{ url_for('expense_detail', expense_id=expense.id) }}"
+               class="btn btn-sm btn-outline-primary">
+              Ver gasto
+            </a>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -48,10 +66,56 @@
   </div>
 
   <div class="d-flex justify-content-end mt-2">
-    <strong>Total: MXN {{ "{:.2f}".format(total_amount) }}</strong>
+    <strong>Total: MXN {{ "%.2f"|format(total_amount) }}</strong>
   </div>
   {% else %}
-    <p class="text-center text-muted">No hay transacciones para el rango de fechas seleccionado.</p>
+    <p class="text-center text-muted">
+      No hay transacciones para el rango de fechas seleccionado.
+    </p>
   {% endif %}
 </div>
+
+<script>
+(function () {
+  const table = document.getElementById('expenseTable');
+  if (!table) return;
+
+  const getCellValue = (row, idx, type) => {
+    const text = row.children[idx].innerText.trim();
+    switch (type) {
+      case 'number': return parseFloat(text.replace(/[^0-9.-]+/g, '')) || 0;
+      case 'date':   return new Date(text || 0).getTime();
+      default:       return text.toLowerCase();
+    }
+  };
+
+  const sortTable = (idx, type, asc) => {
+    const tbody = table.tBodies[0];
+    const rows = Array.from(tbody.rows);
+
+    rows.sort((a, b) => {
+      const v1 = getCellValue(a, idx, type);
+      const v2 = getCellValue(b, idx, type);
+      return asc ? v1 - v2 || v1.localeCompare?.(v2) : v2 - v1 || v2.localeCompare?.(v1);
+    });
+
+    // Re-append in new order
+    rows.forEach(row => tbody.appendChild(row));
+  };
+
+  // Add click listeners
+  table.querySelectorAll('th.sortable').forEach((th, idx) => {
+    let asc = true;                    // toggle direction
+    th.addEventListener('click', () => {
+      // Clear arrows
+      table.querySelectorAll('th .arrow').forEach(el => el.innerText = '');
+      // Set arrow on active th
+      th.querySelector('.arrow').innerText = asc ? '▲' : '▼';
+
+      sortTable(idx, th.dataset.type, asc);
+      asc = !asc;
+    });
+  });
+})();
+</script>
 {% endblock %}
