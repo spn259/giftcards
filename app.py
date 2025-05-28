@@ -455,7 +455,7 @@ from polo_utils import pull_polo_products
 @app.route('/refresh_products', methods=['GET', 'POST'])
 def refresh_products():
     from polo_utils import pull_polo_mods
-    cur_prods = pd.DataFrame(db.session.query(PoloProducts.id, PoloProducts.product_name, PoloProducts.description).all())
+    cur_prods = pd.DataFrame(db.session.query(PoloProducts.id, PoloProducts.product_name, PoloProducts.polo_id, PoloProducts.description).all())
     polo_prods = pull_polo_products()
     polo_prods = pd.DataFrame(polo_prods, columns=['name', 'description', 'polo_id'])
     polo_prods['modifier'] = False
@@ -465,8 +465,8 @@ def refresh_products():
 
     polo_prods = pd.concat([polo_prods, polo_mods]).reset_index(drop=True)
 
-    for i, r in polo_mods.iterrows():
-        if r.polo_id not in cur_prods.id.tolist():
+    for i, r in polo_prods.iterrows():
+        if r.polo_id not in cur_prods.polo_id.tolist():
             fi = PoloProducts(product_name=r['name'], description=r.description, polo_id=r.polo_id, modifier=r.modifier, added=datetime.utcnow())
             db.session.add(fi)
         db.session.commit()
@@ -661,6 +661,7 @@ def merma_dashboard():
     df=  pd.DataFrame(resp.json()['orders'])
     for i, r in df.iterrows():
         for item in r['orderItems']:
+            print(item)
             prod_id = item['cartItem']['productId']
             cnt = item['cartItem']['quantity']
             if not od.get(prod_id):
@@ -819,7 +820,7 @@ def match_polo_products():
     for i, r in all_polo.iterrows():
         polo_d.append({'product_name': r.product_name, 'modifier': r.modifier, 'description': r.description, 'id': r['id']})
         
-        prod_d = list()
+    prod_d = list()
     for i, r in all_prods.iterrows():
         prod_d.append({'product_name': r.product_name, 'description': r.description, 'id': r['id']})
 
@@ -830,7 +831,7 @@ def match_polo_products():
     for example
     "GLASEADA ORIGINAL": [{{name: name, id: id, modifier: modifier}}, {{name: name, id: id, modifier: modifier}}]
 
-    Most will have two matches, one non-modifier and one modifier, return the 4 best matches.
+    Most will have two matches, one non-modifier and one modifier, return the 3 best matches.
 
     In the matches, include the polo id, and whether it is a modifier or not and name as keys
 
