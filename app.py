@@ -830,7 +830,7 @@ def match_polo_products():
     for example
     "GLASEADA ORIGINAL": [{{name: name, id: id, modifier: modifier}}, {{name: name, id: id, modifier: modifier}}]
 
-    Most will have two matches, one non-modifier and one modifier, return the 2 best matches.
+    Most will have two matches, one non-modifier and one modifier, return the 4 best matches.
 
     In the matches, include the polo id, and whether it is a modifier or not and name as keys
 
