@@ -624,7 +624,17 @@ def save_merma_counts():
         
 
         return "Products received"    
-
+def pull_mods(order_id, box_id='aaf6eb61-bc43-4f5c-bf7e-086778897930'):
+    import requests
+    from polo_utils import HEADERS
+    per_order_url = 'https://api.polotab.com/api/v1/restaurants/cd7d0f22-eb20-450e-b185-5ce412a3a8ea/orders/{}'.format(order_id)
+    ord_res = requests.get(per_order_url, headers=HEADERS)
+    all_mods = list()
+    for item in ord_res.json()['orderItems']:
+        if item['cartItem']['productId'] == box_id:
+            mods = [(x['modifier']['id'], x['quantity']) for x in item['cartItem']['cartItemModifiers']]
+            all_mods.extend(mods)
+    return all_mods
 
 @app.route('/merma_dashboard')
 def merma_dashboard():
@@ -658,17 +668,27 @@ def merma_dashboard():
     # Example
     resp = pull_polo_sales(start_str)
     od = dict()
-    df=  pd.DataFrame(resp.json()['orders'])
-    for i, r in df.iterrows():
-        for item in r['orderItems']:
-            print(item)
-            prod_id = item['cartItem']['productId']
-            cnt = item['cartItem']['quantity']
-            if not od.get(prod_id):
-                od[prod_id] = cnt
+    # Example
+    box_id = 'aaf6eb61-bc43-4f5c-bf7e-086778897930'
+    resp = pull_polo_sales(start_str)
+    d = dict()
+    for order in resp.json()['orders']:
+        for prod in order['orderItems']:
+            prod_id = prod['cartItem']['productId']
+            if prod_id == box_id:
+                mods = pull_mods(prod['orderId'])
+                for item in mods:
+                    prod_id, q = item
+                    if not d.get(prod_id):
+                        d[prod_id] = q
+                    else:
+                        d[prod_id] =  d[prod_id]+q
+                        
+            q = prod['cartItem']['quantity']
+            if not d.get(prod_id):
+                d[prod_id] = q
             else:
-                od[prod_id] = od[prod_id]+cnt
-            
+                d[prod_id] =  d[prod_id]+q
     all_prods = pd.DataFrame(db.session.query(Menus.product_name, Menus.description, Menus.id, Menus.polo_product_ids).filter(Menus.active == True).all())
     all_polo = pd.DataFrame(db.session.query(PoloProducts.product_name, PoloProducts.modifier, PoloProducts.description, PoloProducts.id, PoloProducts.polo_id).all())
     polo_to_uuid = dict(zip(all_polo.id.tolist(), all_polo.polo_id.tolist()))
@@ -678,7 +698,7 @@ def merma_dashboard():
             uu = polo_to_uuid.get(item)
             polo_to_adc[uu] = r['product_name']
     final_polo_res = {x: 0 for x in all_prods.product_name.tolist()}
-    for k, v in od.items():
+    for k, v in d.items():
         prod_name = polo_to_adc.get(k)
         if pd.notnull(prod_name):
             final_polo_res[prod_name]+= v
