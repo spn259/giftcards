@@ -2,6 +2,17 @@
 
 {% block head %}
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    /* subtle colour helpers & sort arrows */
+    .bg-success-subtle { background-color: #d1e7dd !important; }
+    .bg-danger-subtle  { background-color: #f8d7da !important; }
+    .bg-body-tertiary  { background-color: #f7f7f7 !important; }
+    .fw-semibold       { font-weight: 600 !important; }
+    th.sortable        { cursor: pointer; user-select: none; }
+    th.sortable::after { content: '⬍'; padding-left: .25rem; font-size: .7em; color: #6c757d; }
+    th.asc::after      { content: '⬆'; }
+    th.desc::after     { content: '⬇'; }
+  </style>
 {% endblock %}
 
 {% block title %}Dashboard Producción y Merma{% endblock %}
@@ -11,14 +22,17 @@
   <h2 class="text-center mb-4 fs-5">Dashboard Producción y Merma</h2>
 
   <!-- Date filter form -->
-  <form method="GET" action="{{ url_for('merma_dashboard') }}" class="row g-3 mb-4 align-items-end justify-content-center">
+  <form method="GET" action="{{ url_for('merma_dashboard') }}"
+        class="row g-3 mb-4 align-items-end justify-content-center">
     <div class="col-auto">
       <label for="start_date" class="form-label">Desde</label>
-      <input type="date" id="start_date" name="start_date" class="form-control" value="{{ request.args.get('start_date', '') }}">
+      <input type="date" id="start_date" name="start_date" class="form-control"
+             value="{{ request.args.get('start_date', '') }}">
     </div>
     <div class="col-auto">
       <label for="end_date" class="form-label">Hasta</label>
-      <input type="date" id="end_date" name="end_date" class="form-control" value="{{ request.args.get('end_date', '') }}">
+      <input type="date" id="end_date" name="end_date" class="form-control"
+             value="{{ request.args.get('end_date', '') }}">
     </div>
     <div class="col-auto">
       <button type="submit" class="btn btn-primary">Filtrar</button>
@@ -27,14 +41,16 @@
 
   {% if data %}
   <div class="table-responsive">
-    <table class="table table-striped table-hover">
+    <table id="prod-table" class="table table-striped table-hover">
       <thead class="table-light">
         <tr>
-          <th>Producto</th>
-          <th class="text-center">Producción</th>
-          <th class="text-center">Merma</th>
-          <th class="text-center">Ventas</th>
-
+          <th class="sortable">Producto</th>
+          <th class="text-center sortable">Producción</th>
+          <th class="text-center sortable">Merma</th>
+          <th class="text-center sortable">Ventas</th>
+          <!-- NUEVAS columnas -->
+          <th class="text-center sortable">Pct vendido</th>
+          <th class="text-center sortable">Pct pérdida</th>
         </tr>
       </thead>
       <tbody>
@@ -44,6 +60,9 @@
           <td class="text-center">{{ item.production_count }}</td>
           <td class="text-center">{{ item.merma_count }}</td>
           <td class="text-center">{{ item.sales_count }}</td>
+          <!-- celdas vacías: JS las llenará -->
+          <td class="text-center"></td>
+          <td class="text-center"></td>
         </tr>
         {% endfor %}
       </tbody>
@@ -53,4 +72,96 @@
     <p class="text-center text-muted">No hay datos para las fechas seleccionadas.</p>
   {% endif %}
 </div>
+
+<!-- JavaScript: calcula porcentajes, colorea y hace sortable la tabla -->
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+  const table = document.getElementById('prod-table');
+  if (!table) return;
+
+  /* ---------- 1.  Calcular porcentaje vendido y pérdida + colores ---------- */
+  const colourCell = (cell, pct, goodHigh = true) => {
+    const GOOD = 'bg-success-subtle text-success fw-semibold';
+    const BAD  = 'bg-danger-subtle  text-danger  fw-semibold';
+    const NEUTRAL = 'bg-body-tertiary text-body';
+
+    let cls = NEUTRAL;
+    if (pct !== null) {
+      if (goodHigh)       cls = pct >= 80 ? GOOD : pct <= 50 ? BAD : NEUTRAL;
+      else /* goodLow */  cls = pct >= 20 ? BAD  : pct <= 5  ? GOOD : NEUTRAL;
+    }
+    cell.className = `text-center ${cls}`;
+    cell.textContent = pct === null ? '—' : pct.toFixed(1) + ' %';
+  };
+
+  const calcPctColumns = () => {
+    for (const row of table.tBodies[0].rows) {
+      const prod   = parseFloat(row.cells[1].textContent) || 0;
+      const merma  = parseFloat(row.cells[2].textContent) || 0;
+      const sales  = parseFloat(row.cells[3].textContent) || 0;
+
+      if (prod === 0) {
+        colourCell(row.cells[4], null);
+        colourCell(row.cells[5], null, false);
+        continue;
+      }
+
+      const pctSold    = (sales / prod) * 100;
+      const pctWaste   = ((prod - (sales + merma)) / prod) * 100;
+
+      colourCell(row.cells[4], pctSold);
+      colourCell(row.cells[5], pctWaste, false);
+    }
+  };
+
+  calcPctColumns(); // initial populate
+
+  /* ---------- 2.  Hacer columnas ordenables ---------- */
+  const getCellValue = (row, idx) => {
+    const txt = row.cells[idx].textContent.trim();
+    // detect percentage cell
+    if (txt.endsWith('%')) return parseFloat(txt);
+    // numeric?
+    const num = parseFloat(txt);
+    return isNaN(num) ? txt.toLowerCase() : num;
+  };
+
+  const sortTable = (idx, asc) => {
+    const rows = Array.from(table.tBodies[0].rows);
+
+    rows.sort((a, b) => {
+      const vA = getCellValue(a, idx);
+      const vB = getCellValue(b, idx);
+
+      if (typeof vA === 'number' && typeof vB === 'number')
+        return asc ? vA - vB : vB - vA;
+
+      // string compare
+      return asc ? vA.localeCompare(vB) : vB.localeCompare(vA);
+    });
+
+    // reattach rows in new order
+    for (const r of rows) table.tBodies[0].appendChild(r);
+  };
+
+  table.tHead.addEventListener('click', e => {
+    const th = e.target.closest('th.sortable');
+    if (!th) return;
+
+    // clear arrow classes on siblings
+    for (const header of table.tHead.rows[0].cells)
+      header.classList.remove('asc', 'desc');
+
+    const idx = Array.from(th.parentNode.cells).indexOf(th);
+    const asc = !(th.classList.contains('asc')); // toggle
+    th.classList.toggle('asc', asc);
+    th.classList.toggle('desc', !asc);
+
+    sortTable(idx, asc);
+    calcPctColumns(); // recount colours after sorting (optional but safe)
+  });
+
+});
+</script>
 {% endblock %}

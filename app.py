@@ -657,6 +657,7 @@ def merma_dashboard():
     try:
         end_date = datetime.strptime(end_str, "%Y-%m-%d").date()
     except ValueError:
+        print("rror conversion...")
         end_date = start_date
 
     # start_dt → 00:00 local CST, naive
@@ -664,13 +665,12 @@ def merma_dashboard():
 
     # end_dt  → 00:00 of day AFTER end_date (exclusive upper bound)
     end_dt   = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
-
+    print(start_str, end_str)
     # Example
-    resp = pull_polo_sales(start_str)
+    resp = pull_polo_sales(start_str, end_str)
     od = dict()
     # Example
     box_id = 'aaf6eb61-bc43-4f5c-bf7e-086778897930'
-    resp = pull_polo_sales(start_str)
     d = dict()
     for order in resp.json()['orders']:
         for prod in order['orderItems']:
@@ -735,19 +735,23 @@ def merma_dashboard():
 
     # ---------- 3. Deduplicate merma by day ----------
     if not merma_df.empty:
-        merma_df["date"] = merma_df["added"].dt.date
+        merma_df["date_hour"] = merma_df["added"].dt.floor("H")     # e.g. 2025-05-29 14:00:00
+
+    # 2️⃣  keep the last row for each (product, hour) combo
         merma_df = (
-            merma_df.sort_values(["product_name", "added"])
-                     .drop_duplicates(subset=["product_name", "date"], keep="last")
-                     [["product_name", "n_merma"]]
+            merma_df.sort_values(["product_name", "added"])         # latest is last after sort
+                    .drop_duplicates(subset=["product_name", "date_hour"], keep="last")
+                    [["product_name", "n_merma"]]                  # final tidy columns
         )
+        print(merma_df)
     
     data = list()
     for i, r in polo_df.iterrows():
         if len(merma_df) > 0:
             tmp_merma= merma_df[merma_df.product_name == r.product_name]
             if len(tmp_merma) > 0:
-                n_merma = tmp_merma.iloc[0]['n_merma']
+                # n_merma = tmp_merma.iloc[0]['n_merma']
+                n_merma = tmp_merma['n_merma'].sum()
             else:
                 n_merma = -1
         else:
@@ -756,6 +760,7 @@ def merma_dashboard():
             tmp_prod = prod_df[prod_df.product_name == r.product_name]
             if len(tmp_prod) > 0:
                 n_prod = tmp_prod.iloc[0]['n_prod']
+                n_prod = tmp_prod['n_prod'].sum()
             else:
                 n_prod = -1
         else:

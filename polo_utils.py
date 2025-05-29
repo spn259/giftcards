@@ -86,36 +86,85 @@ HEADERS = {
 
 }
 
-def cst_day_to_utc_ms(day):
-    """Return (start_ms, end_ms) UTC epoch-ms for a CST calendar date."""
-    # strip any time part, keep only date
-    cst_midnight = CST.localize(datetime.combine(day.date(), time.min))
-    cst_next_mid = cst_midnight + timedelta(days=1)
+from datetime import datetime, time, timedelta
+import dateutil.parser
+import pytz, requests
 
-    start_ms = int(cst_midnight.astimezone(pytz.utc).timestamp() * 1000)
-    end_ms   = int(cst_next_mid.astimezone(pytz.utc).timestamp() * 1000) - 1
+# ── constants you already have ────────────────────────────────────────────────
+# API_URL = "https://api.polotab.com/v1/orders?start={start}&end={end}"
+# HEADERS = {"Authorization": "Bearer …"}
+CST     = pytz.timezone("America/Mexico_City")          # Central Standard/Daylight
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+def _cst_midnight(day: datetime) -> datetime:
+    """Return this calendar day’s midnight in CST (aware datetime)."""
+    return CST.localize(datetime.combine(day.date(), time.min))
+
+def cst_range_to_utc_ms(start_day: datetime, end_day: datetime):
+    """
+    Return (start_ms, end_ms) for an **inclusive** CST date range.
+    `start_day` and `end_day` may contain a time part; only the dates matter.
+    """
+    start_mid   = _cst_midnight(start_day)
+    end_nextmid = _cst_midnight(end_day) + timedelta(days=1)
+
+    start_ms = int(start_mid.astimezone(pytz.utc).timestamp() * 1000)
+    end_ms   = int(end_nextmid.astimezone(pytz.utc).timestamp() * 1000) - 1
     return start_ms, end_ms
 
-def pull_polo_sales(date_str):
+# ── main function ─────────────────────────────────────────────────────────────
+def pull_polo_sales(start_date_str: str | None = None,
+                    end_date_str:   str | None = None) -> requests.Response:
     """
-    Query PoloTab orders for a given CST calendar day (default: today CST)
-    and return the raw `requests.Response`.
+    Fetch PoloTab orders between two CST calendar dates **inclusive**.
+
+    Parameters
+    ----------
+    start_date_str : str | None
+        ISO-like date (e.g. "2025-05-01").  If None, defaults to **today**.
+    end_date_str   : str | None
+        ISO-like date.  If None, defaults to `start_date_str`
+        (→ single-day query identical to the old behaviour).
+
+    Returns
+    -------
+    requests.Response
+        Raw response from the PoloTab API.
     """
-    # ── 1. pick the target day in CST ──
-    if date_str:
-        dt = dateutil.parser.parse(date_str)
+    # 1.  Parse → aware datetimes in CST
+    if start_date_str:
+        start_dt = dateutil.parser.parse(start_date_str)
+    else:                                   # missing → today
+        start_dt = datetime.now(CST)
+
+    if end_date_str:
+        end_dt = dateutil.parser.parse(end_date_str)
+    else:                                   # missing → same as start
+        end_dt = start_dt
+
+    # normalise to CST
+    for var in ("start_dt", "end_dt"):
+        dt = locals()[var]
         if dt.tzinfo is None:
-            dt = CST.localize(dt)       # naive → CST
+            locals()[var] = CST.localize(dt)
         else:
-            dt = dt.astimezone(CST)     # convert whatever → CST
-    else:
-        dt = datetime.now(CST)
+            locals()[var] = dt.astimezone(CST)
 
-    # ── 2. convert to UTC millisecond bounds ──
-    start_ms, end_ms = cst_day_to_utc_ms(dt)
+    # swap if user reversed them
+    if start_dt > end_dt:
+        start_dt, end_dt = end_dt, start_dt
 
-    # ── 3. hit the API ──
+    # 2.  UTC millisecond bounds
+    start_ms, end_ms = cst_range_to_utc_ms(start_dt, end_dt)
+
+    # 3.  Call the API
     url = API_URL.format(start=start_ms, end=end_ms)
     return requests.get(url, headers=HEADERS)
+
+# ── example usage ─────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    # 2025-05-01 through 2025-05-07, inclusive
+    r = pull_polo_sales("2025-05-01", "2025-05-07")
+    print(r.status_code, r.json()[:2])      # peek at first two records
 
 
