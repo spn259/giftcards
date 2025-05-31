@@ -22,3 +22,6 @@ httpx==0.26.*
 python-dotenv
 pytz
 requests
+Flask-Caching
+APScheduler
+

@@ -29,8 +29,11 @@ import os
 from product_utils import grab_week_year
 from datetime import datetime
 import pytz
+from flask_caching import Cache
+from apscheduler.schedulers.background import BackgroundScheduler
+from threading import Lock
 
-local = False
+local = True
 if local:
     from dotenv import load_dotenv
     from pathlib import Path
@@ -109,6 +112,18 @@ app.secret_key = 'supersecretkey'
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
+
+# … existing app = Flask(__name__) …
+
+# ---- Cache config (Simple=memory; use "redis" in prod) -----------------
+app.config["CACHE_TYPE"] = "simple"
+app.config["CACHE_DEFAULT_TIMEOUT"] = 65          # seconds
+cache = Cache(app)
+
+# ---- Background scheduler ----------------------------------------------
+sched = BackgroundScheduler(daemon=True)
+fetch_lock = Lock()       # keeps two jobs from overlapping
+
 
 # User Model linked to the 'users' table in the database
 class User(UserMixin, db.Model):
@@ -640,6 +655,28 @@ def pull_mods(order_id, box_id='aaf6eb61-bc43-4f5c-bf7e-086778897930'):
             all_mods.extend(mods)
     return all_mods
 
+def refresh_sales_cache():
+    """
+    Pull Polo sales for *today* in CST and cache under key 'sales-today'.
+    Runs every minute.  Extend if you need other date ranges.
+    """
+    with fetch_lock:                          # avoid overlapping fetches
+        from datetime import datetime
+        from polo_utils import pull_polo_sales
+        print("CACHING.")
+
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        try:
+            resp = pull_polo_sales(today_str, today_str)
+            cache.set("sales-today", resp.json(), timeout=120)  # 2-minute TTL
+            app.logger.info("Sales cache refreshed ✅")
+        except Exception as e:
+            print("Refresh failed.")
+            app.logger.warning("Sales refresh failed: %s", e)
+
+sched.add_job(refresh_sales_cache, "interval", minutes=1, next_run_time=None)
+sched.start()
+
 @app.route('/merma_dashboard')
 def merma_dashboard():
 
@@ -672,11 +709,18 @@ def merma_dashboard():
     print(start_str, end_str)
     # Example
     resp = pull_polo_sales(start_str, end_str)
-    od = dict()
-    # Example
+    # Fast path: try cached copy first
+    resp = cache.get("sales-today")
+    if resp is None:
+        # cache empty (e.g. first boot) → fall back to live call
+        resp = pull_polo_sales(start_str, end_str).json()
+        print("Pulling live.")
+    else:
+        print("Served Polo sales from cache")
+   
     box_id = 'aaf6eb61-bc43-4f5c-bf7e-086778897930'
     d = dict()
-    for order in resp.json()['orders']:
+    for order in resp['orders']:
         for prod in order['orderItems']:
             prod_id = prod['cartItem']['productId']
             if prod_id == box_id:
