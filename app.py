@@ -656,26 +656,29 @@ def pull_mods(order_id, box_id='aaf6eb61-bc43-4f5c-bf7e-086778897930'):
     return all_mods
 
 def refresh_sales_cache():
-    """
-    Pull Polo sales for *today* in CST and cache under key 'sales-today'.
-    Runs every minute.  Extend if you need other date ranges.
-    """
-    with fetch_lock:                          # avoid overlapping fetches
-        from datetime import datetime
-        from polo_utils import pull_polo_sales
-        print("CACHING.")
+    """Poll PoloTab once a minute and cache JSON under 'sales-today'."""
+    with fetch_lock:
+        with app.app_context():          # ← NEW
+            from polo_utils import pull_polo_sales
+            today_str = datetime.now().strftime("%Y-%m-%d")
 
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        try:
-            resp = pull_polo_sales(today_str, today_str)
-            cache.set("sales-today", resp.json(), timeout=120)  # 2-minute TTL
-            app.logger.info("Sales cache refreshed ✅")
-        except Exception as e:
-            print("Refresh failed.")
-            app.logger.warning("Sales refresh failed: %s", e)
+            try:
+                resp_json = pull_polo_sales(today_str, today_str).json()
+                cache.set("sales-today", resp_json, timeout=120)
+                app.logger.info("Sales cache refreshed ✅")
+            except Exception as exc:
+                app.logger.warning("Sales refresh failed: %s", exc)
 
-sched.add_job(refresh_sales_cache, "interval", minutes=1, next_run_time=None)
-sched.start()
+# sched.add_job(refresh_sales_cache, "interval", minutes=1, next_run_time=None)
+# sched.start()
+if os.environ.get("WERKZEUG_RUN_MAIN") == "true":  # ‘true’ inside the child
+    sched.add_job(refresh_sales_cache,
+                  trigger="interval",
+                  minutes=1,
+                  next_run_time=None)
+    sched.start()
+    app.logger.info("BackgroundScheduler started in child process")
+
 
 @app.route('/merma_dashboard')
 def merma_dashboard():
