@@ -137,24 +137,28 @@ def landing():
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
-@app.route('/login', methods=['GET', 'POST'])
+@app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == 'POST':
-        username = request.form['username'].strip()
-        password = request.form['password'].strip()
+    if request.method == "POST":
+        username = request.form["username"].strip()
+        password = request.form["password"].strip()
 
-        # Query the database for the user
         user = User.query.filter_by(username=username).first()
-
-        # Check if the user exists and the password matches
         if user and check_password_hash(user.password, password):
             login_user(user)
-            flash('Login successful!', 'success')
-            return redirect(url_for('scan'))
-        else:
-            flash('Invalid credentials. Please try again.', 'danger')
+            flash("Login successful!", "success")
 
-    return render_template('login.html')
+            # NEW: honour ?next= if it is a safe relative URL
+            next_page = request.args.get("next")
+            if not next_page or not next_page.startswith("/"):
+                next_page = url_for("scan")
+
+            return redirect(next_page)
+        else:
+            flash("Invalid credentials. Please try again.", "danger")
+
+    # GET or failed POST
+    return render_template("login.html")
 
 @app.route('/logout')
 @login_required
@@ -715,7 +719,8 @@ def merma_dashboard():
     prod_df = pd.DataFrame(
         db.session.query(
             ProductionCounts.product_name,
-            ProductionCounts.n_items.label("n_prod")
+            ProductionCounts.n_items.label("n_prod"),
+            ProductionCounts.added
         )
         .filter(ProductionCounts.added.between(start_dt, end_dt))
         .all()
@@ -733,17 +738,26 @@ def merma_dashboard():
    
 
 
-    # ---------- 3. Deduplicate merma by day ----------
+    # ---------- 1.  Deduplicate MERMA by product + day ----------
     if not merma_df.empty:
-        merma_df["date_hour"] = merma_df["added"].dt.floor("H")     # e.g. 2025-05-29 14:00:00
-
-    # 2️⃣  keep the last row for each (product, hour) combo
+        merma_df["date"] = merma_df["added"].dt.normalize()      # 2025-05-29 00:00:00
         merma_df = (
-            merma_df.sort_values(["product_name", "added"])         # latest is last after sort
-                    .drop_duplicates(subset=["product_name", "date_hour"], keep="last")
-                    [["product_name", "n_merma"]]                  # final tidy columns
+            merma_df.sort_values(["product_name", "added"])      # newest row goes last
+                    .drop_duplicates(subset=["product_name", "date"], keep="last")
+                    [["product_name", "n_merma"]]                # final tidy columns
         )
         print(merma_df)
+
+
+    # ---------- 2.  Deduplicate PRODUCCIÓN by product + day ----------
+    if not prod_df.empty:
+        prod_df["date"] = prod_df["added"].dt.normalize()        # same bucket key
+        prod_df = (
+            prod_df.sort_values(["product_name", "added"])
+                .drop_duplicates(subset=["product_name", "date"], keep="last")
+                [["product_name", "n_prod"]]
+        )
+
     
     data = list()
     for i, r in polo_df.iterrows():
