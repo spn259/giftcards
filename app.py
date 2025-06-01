@@ -171,7 +171,7 @@ def landing():
             print("NOt allowed")
             return render_template("landing.html")
     except:
-        render_template("login.html")
+        return url_for("login")
 
     else:
         return render_template("main_landing.html")
