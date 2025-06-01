@@ -4,15 +4,24 @@ from models import User
 import os
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime, timezone
+from dotenv import load_dotenv
+from pathlib import Path
 
+# Force .env path based on script location
+dotenv_path = Path(__file__).resolve().parent / '.env'
+load_dotenv(dotenv_path=dotenv_path)
 
-username = 'doadmin'
-password = os.environ['PASSWORD']
-host = os.environ['HOST']
-port = os.environ['PORT']
-database =os.environ['DATABASE']
-sslmode = os.environ['SSLMODE']
-
+username = os.environ['dbusername']
+password = os.environ['password']
+host = os.environ['host']
+port = 25060
+database = os.environ['database']
+sslmode = os.environ['sslmode']
+spaces_access_key = os.environ['spaces_access_key']
+spaces_key_id = os.environ['spaces_key_id']
+spaces_bucket_endpoint = os.environ['spaces_bucket_endpoint']
+spaces_bucket_name = os.environ['spaces_bucket_name']
+openai_token = os.environ['openai_token']
 db = PostgresDB(
         username=username,
         password=password,
@@ -22,6 +31,6 @@ db = PostgresDB(
         sslmode=sslmode)
 
 
-new_user = User(username='cajero', password=generate_password_hash('adc123$'))
+new_user = User(username='romina', password=generate_password_hash('andre546'))
 db.session.add(new_user)
 db.session.commit()

@@ -142,13 +142,36 @@ def load_user(user_id):
 # User loader callback (used by Flask-Login to reload users from session
 # Routes
 
+from functools import wraps
+from flask import abort
+from flask_login import current_user, login_required
+
+# ✏️  Put the usernames you want to allow here
+ALLOWED_USERS = {"steven", "romina"}
+
+def username_required(view_func):
+    """Allow the route only for specific usernames."""
+    @wraps(view_func)
+    @login_required                          # must be logged in first
+    def wrapped_view(*args, **kwargs):
+        if current_user.username not in ALLOWED_USERS:
+            abort(403)                       # Forbidden
+        return view_func(*args, **kwargs)
+    return wrapped_view
+
+@username_required            # 👈 just stack it above your view
 @app.route('/main_landing', methods=['GET', 'POST'])
 def main_landing():
     return render_template("main_landing.html")
 
 @app.route('/')
 def landing():
-    return render_template("landing.html")
+    if current_user.username not in ALLOWED_USERS:
+        print("NOt allowed")
+        return render_template("landing.html")
+    else:
+        return render_template("main_landing.html")
+
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -166,7 +189,11 @@ def login():
             # NEW: honour ?next= if it is a safe relative URL
             next_page = request.args.get("next")
             if not next_page or not next_page.startswith("/"):
+                
                 next_page = url_for("scan")
+                if current_user.username in ALLOWED_USERS:
+                    next_page = url_for("main_landing")
+
 
             return redirect(next_page)
         else:
