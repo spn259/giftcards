@@ -166,9 +166,13 @@ def main_landing():
 
 @app.route('/')
 def landing():
-    if current_user.username not in ALLOWED_USERS:
-        print("NOt allowed")
-        return render_template("landing.html")
+    try:
+        if current_user.username not in ALLOWED_USERS:
+            print("NOt allowed")
+            return render_template("landing.html")
+    except:
+        render_template("login.html")
+
     else:
         return render_template("main_landing.html")
 
