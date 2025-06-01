@@ -164,6 +164,7 @@ def username_required(view_func):
 def main_landing():
     return render_template("main_landing.html")
 
+@login_required
 @app.route('/')
 def landing():
     try:
