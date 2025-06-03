@@ -73,6 +73,7 @@ SYSTEM_PROMPT = (
     "purchase receipts. For every image you see, return ONE object with keys: "
     "amount_mxn (float), vendor (string), payment_method (string), "
     "factura (boolean), date (ISO-8601), category (string). "
+    "The options for category are: Insumos Comida/Bebidas, Insumos Limpieza, Empaques, Renta, Gasto Extraordinario, Servicios Recurrentes, Inversion Capital, Nomina, Marketing, Impuestos, Reparaciones, Otro"
     "if one of the images is a BBVA transfer, use that as the transaction date and the payment method is bank transfer"
     "if it is not, try to guess the payment type from these options: ['Transferencia', 'Tarjeta', 'Efectivo']"
     "If the receipt is itemised, include an 'items' list with product, qty & price. "

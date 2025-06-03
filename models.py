@@ -101,6 +101,10 @@ class Expenses(Base):
     submit_date = Column(DateTime)
     factura = Column(Boolean)
     reference_file_paths = Column(JSONB)
+    category = Column(String)
+    biz_area = Column(String)
+    payment_method = Column(String)
+    username = Column(String)
 
 
 class PoloProducts(Base):

@@ -104,7 +104,7 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = f"postgresql://{username}:{password}@{host}:{port}/{database}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = 'supersecretkey'
-
+from datetime import timedelta
 
 # Secret key for session management (you should use a secure random key)
 app.secret_key = 'supersecretkey'
@@ -112,6 +112,7 @@ app.secret_key = 'supersecretkey'
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
+login_manager.remember_cookie_duration = timedelta(days=30)  # example: 30 d
 
 # … existing app = Flask(__name__) …
 
@@ -435,27 +436,39 @@ def extract_receipt_api():
         return jsonify({"error": "no files"}), 400
     return jsonify(json.loads(extract_receipts(blobs)))
 
-
-@app.route('/admin_registrar_gasto', methods=['GET', 'POST'])
+@app.route("/admin_registrar_gasto", methods=["GET", "POST"])
+@login_required  # Require login to access this page
 def admin_registrar_gasto():
     """
     Handles the final form submit from the detailsSection.
     """
     try:
         # ── 1. Parse primitive fields ──────────────────────────────
-        amount_raw = request.form.get("amount", "0").replace(",", "")
-        amount     = float(decimal.Decimal(amount_raw))
-        vendor     = request.form.get("vendor", "").strip()
-        pay_meth   = request.form.get("payment_method")    # may be None
-        factura    = request.form.get("factura") == "si"
+        amount_raw = (request.form.get("amount", "0") or "0").replace(",", "")
+        amount = float(decimal.Decimal(amount_raw))
 
-        # From hidden input (add <input type=\"hidden\" name=\"raw_json\">)
+        vendor   = request.form.get("vendor", "").strip()
+        pay_meth = request.form.get("payment_method")         # may be None
+        factura  = request.form.get("factura") == "si"
+
+        # NEW required selects
+        expense_cat = request.form.get("expense_category")
+        biz_area    = request.form.get("business_area")
+
+        if not expense_cat or not biz_area:
+            raise ValueError("missing_category")  # triggers first except-block
+
+        # Hidden JSON blob
         details_json = request.form.get("raw_json") or "{}"
-        details      = json.loads(details_json)
+        details = json.loads(details_json)
 
-        # Optional: allow manual date entry later
+        # Optional date: prefer extractor, fall back to manual input
         txn_date = details.get("date") or request.form.get("transaction_date")
         txn_date = datetime.fromisoformat(txn_date) if txn_date else None
+        try:
+            user = current_user.username
+        except:
+            user = None
 
         # ── 2. Insert expense row ──────────────────────────────────
         expense = Expenses(
@@ -465,10 +478,14 @@ def admin_registrar_gasto():
             transaction_date=txn_date,
             submit_date=datetime.utcnow(),
             factura=factura,
-            reference_file_paths=[],       # fill after uploads
+            payment_method=pay_meth,
+            category=expense_cat,   # <─ NEW
+            biz_area=biz_area,         # <─ NEW
+            reference_file_paths=[],
+            username=user,        # fill after uploads
         )
         db.session.add(expense)
-        db.session.flush()                 # get expense.id
+        db.session.flush()  # get expense.id
 
         # ── 3. Upload every file to Spaces ─────────────────────────
         keys = []
@@ -482,18 +499,19 @@ def admin_registrar_gasto():
         expense.reference_file_paths = keys
         db.session.commit()
 
-        print("Gasto guardado ✅", "success")
+        flash("Gasto guardado correctamente.", "success")
         return redirect(url_for("admin_log_expense"))
 
     except (ValueError, decimal.InvalidOperation):
+        # covers invalid amount or missing required selects
         db.session.rollback()
-        print("Monto inválido", "danger")
+        flash("Datos inválidos: verifica monto y categorías.", "danger")
         return redirect(url_for("admin_log_expense"))
 
     except SQLAlchemyError:
         db.session.rollback()
         app.logger.exception("DB error saving expense")
-        print("Error de base de datos", "danger")
+        flash("Error de base de datos.", "danger")
         return redirect(url_for("admin_log_expense"))
 
     except Exception as e:
