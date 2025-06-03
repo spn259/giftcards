@@ -436,88 +436,99 @@ def extract_receipt_api():
         return jsonify({"error": "no files"}), 400
     return jsonify(json.loads(extract_receipts(blobs)))
 
+from datetime import datetime, timedelta
+import pytz
+
 @app.route("/admin_registrar_gasto", methods=["GET", "POST"])
-@login_required  # Require login to access this page
+@login_required
 def admin_registrar_gasto():
-    """
-    Handles the final form submit from the detailsSection.
-    """
-    try:
-        # ── 1. Parse primitive fields ──────────────────────────────
-        amount_raw = (request.form.get("amount", "0") or "0").replace(",", "")
-        amount = float(decimal.Decimal(amount_raw))
-
-        vendor   = request.form.get("vendor", "").strip()
-        pay_meth = request.form.get("payment_method")         # may be None
-        factura  = request.form.get("factura") == "si"
-
-        # NEW required selects
-        expense_cat = request.form.get("expense_category")
-        biz_area    = request.form.get("business_area")
-
-        if not expense_cat or not biz_area:
-            raise ValueError("missing_category")  # triggers first except-block
-
-        # Hidden JSON blob
-        details_json = request.form.get("raw_json") or "{}"
-        details = json.loads(details_json)
-
-        # Optional date: prefer extractor, fall back to manual input
-        txn_date = details.get("date") or request.form.get("transaction_date")
-        txn_date = datetime.fromisoformat(txn_date) if txn_date else None
+    # ------------------------------------------------------------------ POST
+    if request.method == "POST":
         try:
-            user = current_user.username
-        except:
-            user = None
+            amount_raw = (request.form.get("amount", "0") or "0").replace(",", "")
+            amount = float(decimal.Decimal(amount_raw))
 
-        # ── 2. Insert expense row ──────────────────────────────────
-        expense = Expenses(
-            vendor=vendor,
-            amount=amount,
-            details=details,
-            transaction_date=txn_date,
-            submit_date=datetime.utcnow(),
-            factura=factura,
-            payment_method=pay_meth,
-            category=expense_cat,   # <─ NEW
-            biz_area=biz_area,         # <─ NEW
-            reference_file_paths=[],
-            username=user,        # fill after uploads
-        )
-        db.session.add(expense)
-        db.session.flush()  # get expense.id
+            vendor   = request.form.get("vendor", "").strip()
+            pay_meth = request.form.get("payment_method")
+            factura  = request.form.get("factura") == "si"
 
-        # ── 3. Upload every file to Spaces ─────────────────────────
-        keys = []
-        for f in request.files.getlist("receipts"):
-            if not f or f.filename == "":
-                continue
-            key = upload_receipt(f, expense.id)
-            keys.append(key)
+            expense_cat = request.form.get("expense_category")
+            biz_area    = request.form.get("business_area")
+            if not expense_cat or not biz_area:
+                raise ValueError("missing_category")
 
-        # ── 4. Update row with file paths & commit ─────────────────
-        expense.reference_file_paths = keys
-        db.session.commit()
+            details_json = request.form.get("raw_json") or "{}"
+            details = json.loads(details_json)
 
-        flash("Gasto guardado correctamente.", "success")
-        return redirect(url_for("admin_log_expense"))
+            txn_date = details.get("date") or request.form.get("transaction_date")
+            txn_date = datetime.fromisoformat(txn_date) if txn_date else None
 
-    except (ValueError, decimal.InvalidOperation):
-        # covers invalid amount or missing required selects
-        db.session.rollback()
-        flash("Datos inválidos: verifica monto y categorías.", "danger")
-        return redirect(url_for("admin_log_expense"))
+            username = getattr(current_user, "username", None)
 
-    except SQLAlchemyError:
-        db.session.rollback()
-        app.logger.exception("DB error saving expense")
-        flash("Error de base de datos.", "danger")
-        return redirect(url_for("admin_log_expense"))
+            expense = Expenses(
+                vendor=vendor,
+                amount=amount,
+                details=details,
+                transaction_date=txn_date,
+                submit_date=datetime.utcnow(),
+                factura=factura,
+                payment_method=pay_meth,
+                category=expense_cat,
+                biz_area=biz_area,
+                reference_file_paths=[],
+                username=username,
+            )
+            db.session.add(expense)
+            db.session.flush()                 # get expense.id for uploads
 
-    except Exception as e:
-        db.session.rollback()
-        app.logger.exception("Unexpected error")
-        return jsonify({"error": "server_error", "details": str(e)}), 500
+            keys = []
+            for f in request.files.getlist("receipts"):
+                if f and f.filename:
+                    keys.append(upload_receipt(f, expense.id))
+            expense.reference_file_paths = keys
+            db.session.commit()
+
+            flash("Gasto guardado correctamente.", "success")
+        except (ValueError, decimal.InvalidOperation):
+            db.session.rollback()
+            flash("Datos inválidos: verifica monto y categorías.", "danger")
+        except SQLAlchemyError:
+            db.session.rollback()
+            app.logger.exception("DB error saving expense")
+            flash("Error de base de datos.", "danger")
+        except Exception as e:
+            db.session.rollback()
+            app.logger.exception("Unexpected error")
+            return jsonify({"error": "server_error", "details": str(e)}), 500
+
+        return redirect(url_for("admin_registrar_gasto"))  # stay on page
+
+    # ------------------------------------------------------------------ GET
+    # 1) current month in CST
+    cst = pytz.timezone("America/Mexico_City")
+    now  = datetime.now(cst)
+    start_of_month = now.replace(day=1, hour=0, minute=0, second=0,
+                                 microsecond=0).replace(tzinfo=None)
+    end_of_today   = now.replace(hour=23, minute=59, second=59,
+                                 microsecond=999999).replace(tzinfo=None)
+
+    # 2) fetch expenses
+    rows = (db.session.query(Expenses)
+                    .filter(Expenses.transaction_date >= start_of_month,
+                            Expenses.transaction_date <= end_of_today)
+                    .order_by(Expenses.transaction_date.desc())
+                    .all())
+
+    total_amount = sum(r.amount for r in rows)
+
+    # 3) render the same template you already use to create expenses
+    return render_template(
+        "admin_registrar_gasto.html",
+        data=rows,
+        total_amount=total_amount,
+        start_date=start_of_month.date().isoformat(),
+        end_date=end_of_today.date().isoformat(),
+    )
 
 from polo_utils import pull_polo_products
 

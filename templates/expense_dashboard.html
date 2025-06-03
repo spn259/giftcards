@@ -2,9 +2,11 @@
 
 {% block head %}
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- DataTables + Bootstrap-5 -->
+  <link rel="stylesheet"
+        href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css">
   <style>
-    th.sortable { cursor: pointer; user-select: none; }
-    th.sortable .arrow { font-size: .7rem; opacity: .6; }
+    tfoot input, tfoot select { width: 100%; font-size:.8rem; }
   </style>
 {% endblock %}
 
@@ -14,7 +16,7 @@
 <div class="container-fluid px-3 py-4">
   <h2 class="text-center mb-4 fs-5">Dashboard de Gastos</h2>
 
-  <!-- Filtro de fechas (sin cambios) -->
+  <!-- Date filter -->
   <form method="GET" action="{{ url_for('expenses_dashboard') }}"
         class="row g-3 mb-4 align-items-end justify-content-center">
     <div class="col-auto">
@@ -35,16 +37,38 @@
   </form>
 
   {% if data %}
+  <!-- Export + total -->
+  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <button id="exportCsvBtn" class="btn btn-outline-secondary btn-sm">
+      Exportar CSV
+    </button>
+    <strong class="ms-auto">Total: MXN {{ "%.2f"|format(total_amount) }}</strong>
+  </div>
+
   <div class="table-responsive">
-    <table id="expenseTable" class="table table-striped table-hover align-middle">
+    <table id="expenseTable"
+           class="table table-striped table-hover align-middle w-100">
       <thead class="table-light">
         <tr>
-          <th class="sortable" data-type="text">Proveedor <span class="arrow"></span></th>
-          <th class="sortable text-end" data-type="number">Monto&nbsp;(MXN) <span class="arrow"></span></th>
-          <th class="sortable text-center" data-type="date">Fecha&nbsp;Transacción <span class="arrow"></span></th>
-          <th class="text-center">Ver</th>
+          <th>Proveedor</th>
+          <th>Monto&nbsp;(MXN)</th>
+          <th>Fecha&nbsp;Transacción</th>
+          <th>Categoría</th>
+          <th>Área</th>
+          <th>Ver</th>
         </tr>
       </thead>
+      <tfoot>
+        <tr>
+          <th><input type="text" placeholder="Proveedor"></th>
+          <th><input type="text" class="amount-filter"
+                     placeholder=">100  |  50-200"></th>
+          <th><input type="text" placeholder="AAAA-MM-DD"></th>
+          <th><!-- select built by JS --></th>
+          <th><!-- select built by JS --></th>
+          <th></th>
+        </tr>
+      </tfoot>
       <tbody>
         {% for expense in data %}
         <tr>
@@ -53,20 +77,16 @@
           <td class="text-center">
             {{ expense.transaction_date.strftime('%Y-%m-%d') if expense.transaction_date else '' }}
           </td>
+          <td>{{ expense.category or '' }}</td>
+          <td>{{ expense.biz_area or '' }}</td>
           <td class="text-center">
             <a href="{{ url_for('expense_detail', expense_id=expense.id) }}"
-               class="btn btn-sm btn-outline-primary">
-              Ver gasto
-            </a>
+               class="btn btn-sm btn-outline-primary">Ver gasto</a>
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
-  </div>
-
-  <div class="d-flex justify-content-end mt-2">
-    <strong>Total: MXN {{ "%.2f"|format(total_amount) }}</strong>
   </div>
   {% else %}
     <p class="text-center text-muted">
@@ -75,47 +95,90 @@
   {% endif %}
 </div>
 
+<!-- JS deps -->
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
+
 <script>
-(function () {
-  const table = document.getElementById('expenseTable');
-  if (!table) return;
+$(function () {
 
-  const getCellValue = (row, idx, type) => {
-    const text = row.children[idx].innerText.trim();
-    switch (type) {
-      case 'number': return parseFloat(text.replace(/[^0-9.-]+/g, '')) || 0;
-      case 'date':   return new Date(text || 0).getTime();
-      default:       return text.toLowerCase();
+  /* ───── DataTable init ───── */
+  const dt = $('#expenseTable').DataTable({
+    paging: false,                // ⬅️  show all rows
+    order: [[2,'desc']],
+    columnDefs: [
+      { targets: [5], orderable:false },
+      { targets: [1], className:'text-end' },
+      { targets: [2], className:'text-center' }
+    ],
+    language: {
+      search: 'Buscar:',
+      lengthMenu: 'Mostrar _MENU_',
+      info: 'Mostrando _START_–_END_ de _TOTAL_',
+      paginate: { previous: '←', next:'→' },
+      zeroRecords:'Sin resultados'
     }
-  };
-
-  const sortTable = (idx, type, asc) => {
-    const tbody = table.tBodies[0];
-    const rows = Array.from(tbody.rows);
-
-    rows.sort((a, b) => {
-      const v1 = getCellValue(a, idx, type);
-      const v2 = getCellValue(b, idx, type);
-      return asc ? v1 - v2 || v1.localeCompare?.(v2) : v2 - v1 || v2.localeCompare?.(v1);
-    });
-
-    // Re-append in new order
-    rows.forEach(row => tbody.appendChild(row));
-  };
-
-  // Add click listeners
-  table.querySelectorAll('th.sortable').forEach((th, idx) => {
-    let asc = true;                    // toggle direction
-    th.addEventListener('click', () => {
-      // Clear arrows
-      table.querySelectorAll('th .arrow').forEach(el => el.innerText = '');
-      // Set arrow on active th
-      th.querySelector('.arrow').innerText = asc ? '▲' : '▼';
-
-      sortTable(idx, th.dataset.type, asc);
-      asc = !asc;
-    });
   });
-})();
+
+  /* ───── Text filters (vendor/date) ───── */
+  $('#expenseTable tfoot input:not(.amount-filter)').on('keyup change', function () {
+    dt.column($(this).parent().index()).search(this.value).draw();
+  });
+
+  /* ───── Numeric filter for amount ───── */
+  $.fn.dataTable.ext.search.push(function (settings, data) {
+    if (settings.nTable.id !== 'expenseTable') return true;
+    const expr = $('.amount-filter').val().trim(); if (!expr) return true;
+    const amount = parseFloat(data[1].replace(/[^0-9.-]+/g,''))||0;
+
+    const range = expr.match(/^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)$/);
+    if (range) return amount>=+range[1] && amount<=+range[2];
+
+    const op = expr.match(/^([<>]=?)\s*(\d+(?:\.\d+)?)$/);
+    if (op) {
+      const v=+op[2]; return ({'>':amount>v,'>=':amount>=v,'<':amount<v,'<=':amount<=v})[op[1]];
+    }
+    const num=parseFloat(expr); return isNaN(num)?true:amount===num;
+  });
+  $('.amount-filter').on('keyup change', ()=>dt.draw());
+
+  /* ───── Select filters for category / area ───── */
+  [3,4].forEach(i=>{
+    const col=dt.column(i);
+    const $sel=$('<select class="form-select form-select-sm"><option value="">Todos</option></select>')
+      .appendTo($(col.footer()).empty())
+      .on('change',function(){
+        col.search(this.value? '^'+$.fn.dataTable.util.escapeRegex(this.value)+'$':'', true,false).draw();
+      });
+    col.data().unique().sort().each(d=>{ if(d) $sel.append(`<option>${d}</option>`);});
+  });
+
+  /* ───── Export to CSV ───── */
+  $('#exportCsvBtn').on('click', function () {
+    const rows = dt.rows({ search:'applied' }).data().toArray();
+    if (!rows.length) return;
+
+    const header = ['Proveedor','Monto (MXN)','Fecha','Categoría','Área'];
+    const csv = [header.join(',')];
+
+    rows.forEach(r => {
+      // r[5] is the HTML of the button; ignore
+      const cleaned = r.slice(0,5).map(c => `"${c.replace(/"/g,'""')}"`);
+      csv.push(cleaned.join(','));
+    });
+
+    const blob = new Blob([csv.join('\n')], { type:'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a = $('<a style="display:none">')[0];
+    a.href = url;
+    a.download = 'gastos.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+});
 </script>
 {% endblock %}
