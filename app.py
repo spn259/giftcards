@@ -33,7 +33,7 @@ from flask_caching import Cache
 from apscheduler.schedulers.background import BackgroundScheduler
 from threading import Lock
 
-local = True
+local = False
 if local:
     from dotenv import load_dotenv
     from pathlib import Path
