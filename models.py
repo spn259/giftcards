@@ -152,5 +152,28 @@ class MermaCounts(Base):
     n_items = Column(Integer)
     added = Column(DateTime(timezone=False))
    
+class InventoryProducts(Base):
+    __tablename__ = "inventory_products"
+    __table_args__ = {"schema": "public", "extend_existing": True}
+
+    id = Column(BigInteger, primary_key=True)
+    product_area = Column(String, nullable=False)
+    product_category = Column(String, nullable=False)
+    product_name = Column(String)
+    measure = Column(String)
+    details = Column(String)
+    username = Column(String)
+    added = Column(DateTime(timezone=False))
+
+class InventoryCounts(Base):
+    __tablename__ = "inventory_counts"
+    __table_args__ = {"schema": "public", "extend_existing": True}
+
+    id = Column(BigInteger, primary_key=True)
+    product_id = Column(BigInteger, nullable=False)
+    value = Column(String, nullable=False)
+    location = Column(String)
+    username = Column(String)
+    added = Column(DateTime(timezone=False))
 
 

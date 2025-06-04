@@ -16,7 +16,7 @@ from flask_login import LoginManager, UserMixin
 
 from models import Expenses     
 from db import PostgresDB
-from models import Cards, Transactions, WorkerPin, CustomerPin, PoloProducts, Menus, ProductionCounts, MermaCounts
+from models import Cards, Transactions, WorkerPin, CustomerPin, PoloProducts, Menus, ProductionCounts, MermaCounts, InventoryProducts, InventoryCounts
 import os
 import uuid
 from datetime import datetime, timezone
@@ -33,7 +33,7 @@ from flask_caching import Cache
 from apscheduler.schedulers.background import BackgroundScheduler
 from threading import Lock
 
-local = False
+local = True
 if local:
     from dotenv import load_dotenv
     from pathlib import Path
@@ -160,7 +160,8 @@ def username_required(view_func):
         return view_func(*args, **kwargs)
     return wrapped_view
 
-@username_required            # 👈 just stack it above your view
+@username_required    
+@login_required        # 👈 just stack it above your view
 @app.route('/main_landing', methods=['GET', 'POST'])
 def main_landing():
     return render_template("main_landing.html")
@@ -425,10 +426,12 @@ def thankyou():
 
 
 @app.route('/admin_log_expense', methods=['GET', 'POST'])
+@login_required
 def admin_log_expense():
     return render_template('admin_registrar_gasto.html')
 
 @app.post("/extract_receipt_api")
+@login_required
 def extract_receipt_api():
     from receipt_utils import extract_receipts
     blobs = [f.read() for f in request.files.getlist("receipts")]
@@ -704,6 +707,7 @@ def save_merma_counts():
         
 
         return "Products received"    
+    
 def pull_mods(order_id, box_id='aaf6eb61-bc43-4f5c-bf7e-086778897930'):
     import requests
     from polo_utils import HEADERS
@@ -730,15 +734,9 @@ def refresh_sales_cache():
             except Exception as exc:
                 app.logger.warning("Sales refresh failed: %s", exc)
 
-# sched.add_job(refresh_sales_cache, "interval", minutes=1, next_run_time=None)
-# sched.start()
-if os.environ.get("WERKZEUG_RUN_MAIN") == "true":  # ‘true’ inside the child
-    sched.add_job(refresh_sales_cache,
-                  trigger="interval",
-                  minutes=1,
-                  next_run_time=None)
-    sched.start()
-    app.logger.info("BackgroundScheduler started in child process")
+sched.add_job(refresh_sales_cache, "interval", minutes=1, next_run_time=None)
+sched.start()
+app.logger.info("BackgroundScheduler started in child process")
 
 
 @app.route('/merma_dashboard')
@@ -772,15 +770,15 @@ def merma_dashboard():
     end_dt   = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
     print(start_str, end_str)
     # Example
-    resp = pull_polo_sales(start_str, end_str)
+    # resp = pull_polo_sales(start_str, end_str)
     # Fast path: try cached copy first
     resp = cache.get("sales-today")
     if resp is None:
-        # cache empty (e.g. first boot) → fall back to live call
         resp = pull_polo_sales(start_str, end_str).json()
-        print("Pulling live.")
+        cache.set("sales-today", resp, timeout=120)     # <-- fill on miss
+        app.logger.info("Pulled live Polo sales")
     else:
-        print("Served Polo sales from cache")
+        app.logger.info("Served Polo sales from cache")
    
     box_id = 'aaf6eb61-bc43-4f5c-bf7e-086778897930'
     d = dict()
@@ -1159,6 +1157,105 @@ def expense_detail(expense_id: int):
         items=items,
         files=files,
     )
+
+@app.route('/create_inventory_item', methods=['GET', 'POST'])
+@login_required
+def create_inventory_item():
+    return render_template("create_inventory_item.html")
+
+@app.post("/save_inventory_item")
+@login_required
+def save_inventory_item():
+    # 1. Resolve category / measure
+    category = (request.form.get("product_category") == "_new"
+                and request.form.get("new_category") or request.form.get("product_category"))
+    measure  = (request.form.get("measure") == "_new"
+                and request.form.get("new_measure") or request.form.get("measure"))
+    
+    username = getattr(current_user, "username", None)
+
+    item = InventoryProducts(
+        product_area=request.form["product_area"],
+        product_category=category,
+        product_name=request.form["product_name"].strip(),
+        measure=measure,
+        details=request.form.get("details"),
+        username=username,
+        added=datetime.now()
+    )
+    db.session.add(item)
+    db.session.commit()
+    flash("Artículo guardado.", "success")
+    return redirect(url_for("create_inventory_item"))
+
+@app.route('/show_inventory_item', methods=['GET', 'POST'])
+@login_required
+def show_inventory_items():
+    items = pd.DataFrame(db.session.query(InventoryProducts.id, InventoryProducts.product_area, InventoryProducts.product_category, InventoryProducts.product_name, InventoryProducts.details, InventoryProducts.measure))
+    l = list()
+    for i, r in items.iterrows():
+        l.append({'id': r.id, 'area': r.product_area, 'category': r.product_category, 'name': r.product_name, 'measure': r.measure, 'details': r.details})
+
+    return render_template("show_inventory_items.html", inventory=l)
+
+
+# @app.route("/inventory/<int:item_id>/edit", methods=["GET", "POST"])
+# @login_required
+# def edit_inventory_item(item_id: int):
+#     items = pd.DataFrame(db.session.query(InventoryProducts.id, InventoryProducts.product_area, InventoryProducts.product_category, 
+#                                           InventoryProducts.product_name, InventoryProducts.details, 
+#                                           InventoryProducts.measure).filter(InventoryProducts.id == item_id))
+def row_to_dict(row):
+    return {c.name: getattr(row, c.name) for c in row.__table__.columns}
+
+@app.get("/inventory/<int:item_id>/edit")
+@login_required
+def inventory_edit(item_id: int):
+    """
+    Display the page that lets the user enter a value for this product.
+    URL comes directly from the dashboard card:  /inventory/42/edit
+    """
+    item = db.session.get(InventoryProducts, item_id) or abort(404)
+    item = row_to_dict(item)
+    inventory = [row_to_dict(x) for x in db.session.query(InventoryProducts).all()]
+
+    return render_template(
+        "register_inventory.html",
+        item=item,
+        inventory=inventory          #  ← now defined
+    )
+
+@app.post("/inventory/<int:item_id>/value")
+@login_required
+def save_inventory_value(item_id: int):
+    """
+    Receives JSON: {"value": 12.5}
+    Saves that numeric value for the given inventory item.
+    """
+    item = db.session.get(InventoryProducts, item_id) or abort(404)
+
+    data = request.get_json(silent=True) or {}
+    try:
+        val = float(data["value"])
+        if val < 0:
+            raise ValueError
+    except (KeyError, ValueError, TypeError):
+        return {"error": "invalid_value"}, 400
+    
+    location = data.get("location", "tienda").lower()
+    if location not in {"tienda", "bodega"}:
+        return {"error": "invalid_location"}, 400
+    username = getattr(current_user, "username", None)
+
+    # Example: insert a movement / update stock
+    mv = InventoryCounts(item_id=item.id,
+                           value=val,
+                           location=location,
+                           user_id=username, 
+                           added=datetime.now())
+    db.session.add(mv)
+    db.session.commit()
+    return {"ok": True}, 201
 
 
 # Run app locally

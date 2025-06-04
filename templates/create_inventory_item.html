@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Nuevo Inventario{% endblock %}
+
+{% block head %}
+<style>
+  /* card helper */
+  .inv-card { max-width: 680px; margin-inline:auto; }
+  /* floating labels only on <576px (space-saving) */
+  @media (min-width: 576px) {
+    .form-floating > label { position: static; transform:none; }
+    .form-floating > .form-control { padding: .5rem .75rem; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="card inv-card shadow-sm rounded-4">
+    <div class="card-body p-4">
+      <h4 class="card-title text-center mb-4">Crear artículo de inventario</h4>
+
+      <form method="POST" action="{{ url_for('save_inventory_item') }}" id="invForm">
+        {% if csrf_token %}{{ csrf_token() }}{% endif %}
+
+        <div class="row g-3">
+          <!-- Área -->
+          <div class="col-12 col-sm-6">
+            <label for="product_area" class="form-label fw-semibold">Área *</label>
+            <select id="product_area" name="product_area" class="form-select" required>
+              <option disabled selected value="">Selecciona…</option>
+              <option value="barra">Barra</option>
+              <option value="donas">Donas</option>
+              <option value="pizza">Pizza</option>
+            </select>
+          </div>
+
+          <!-- Categoría -->
+          <div class="col-12 col-sm-6">
+            <label for="product_category" class="form-label fw-semibold">Categoría *</label>
+            <select id="product_category" name="product_category" class="form-select" required>
+              <option disabled selected value="">Selecciona…</option>
+              <option value="utensilios">Utensilios</option>
+              <option value="bebidas">Bebidas</option>
+              <option value="polvos">Polvos</option>
+              <option value="empaques">Empaques</option>
+              <option value="_new">Añadir nueva…</option>
+            </select>
+            <input type="text" id="new_category" name="new_category"
+                   class="form-control mt-2 d-none"
+                   placeholder="Nueva categoría">
+          </div>
+
+          <!-- Nombre -->
+          <div class="col-12">
+            <label for="product_name" class="form-label fw-semibold">Nombre del producto *</label>
+            <input type="text" id="product_name" name="product_name"
+                   class="form-control" required>
+          </div>
+
+          <!-- Unidad de medida -->
+          <div class="col-12 col-sm-6">
+            <label for="measure" class="form-label fw-semibold">Unidad de medida *</label>
+            <select id="measure" name="measure" class="form-select" required>
+              <option disabled selected value="">Selecciona…</option>
+              <option value="unidades">Unidades</option>
+              <option value="gramos">Gramos</option>
+              <option value="litros">Litros</option>
+              <option value="_new">Añadir nueva…</option>
+            </select>
+            <input type="text" id="new_measure" name="new_measure"
+                   class="form-control mt-2 d-none"
+                   placeholder="Nueva unidad">
+          </div>
+
+          <!-- Detalles -->
+          <div class="col-12">
+            <label for="details" class="form-label fw-semibold">Detalles (opcional)</label>
+            <textarea id="details" name="details" class="form-control" rows="3"
+                      placeholder="Descripción, nota interna, etc."></textarea>
+          </div>
+        </div><!-- row -->
+
+        <div class="d-md-flex justify-content-end gap-2 mt-4">
+          <a href="{{ url_for('show_inventory_items') }}"
+             class="btn btn-outline-secondary flex-grow-1 flex-md-grow-0 mb-2 mb-md-0">
+            Cancelar
+          </a>
+          <button type="submit"
+                  class="btn btn-primary flex-grow-1 flex-md-grow-0">
+            Guardar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- small helper to toggle “new” inputs -->
+<script>
+(() => {
+  function toggle(selectId, inputId) {
+    const sel = document.getElementById(selectId);
+    const inp = document.getElementById(inputId);
+    sel.addEventListener('change', () => {
+      const show = sel.value === '_new';
+      inp.classList.toggle('d-none', !show);
+      inp.required = show;
+      if (!show) inp.value = '';
+    });
+  }
+  toggle('product_category', 'new_category');
+  toggle('measure', 'new_measure');
+})();
+</script>
+{% endblock %}
