@@ -774,10 +774,12 @@ def merma_dashboard():
     # Fast path: try cached copy first
     resp = cache.get("sales-today")
     if resp is None:
+        logging.warning("Pulled live polo sales.")
         resp = pull_polo_sales(start_str, end_str).json()
         cache.set("sales-today", resp, timeout=120)     # <-- fill on miss
         app.logger.info("Pulled live Polo sales")
     else:
+        logging.warning("From cache.")
         app.logger.info("Served Polo sales from cache")
    
     box_id = 'aaf6eb61-bc43-4f5c-bf7e-086778897930'
