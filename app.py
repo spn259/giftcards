@@ -720,23 +720,44 @@ def pull_mods(order_id, box_id='aaf6eb61-bc43-4f5c-bf7e-086778897930'):
             all_mods.extend(mods)
     return all_mods
 
+# ── after you create `app = Flask(__name__)` ─────────────────────────
+from apscheduler.schedulers.background import BackgroundScheduler
+from threading import Lock
+import atexit, logging
+
+cache       = Cache(app)          # already in your code
+fetch_lock  = Lock()
+sched       = BackgroundScheduler(daemon=True)
+
 def refresh_sales_cache():
-    """Poll PoloTab once a minute and cache JSON under 'sales-today'."""
-    with fetch_lock:
-        with app.app_context():          # ← NEW
-            from polo_utils import pull_polo_sales
-            today_str = datetime.now().strftime("%Y-%m-%d")
+    """Poll PoloTab once a minute and cache the JSON result."""
+    with fetch_lock, app.app_context():       # ensure app-ctx for DB
+        from polo_utils import pull_polo_sales
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        try:
+            resp_json = pull_polo_sales(today, today).json()
+            cache.set("sales-today", resp_json, timeout=120)
+            logging.warning("Sales cache refreshed ✅")
+        except Exception as exc:
+            logging.warning("Sales refresh failed: %s", exc)
 
-            try:
-                resp_json = pull_polo_sales(today_str, today_str).json()
-                cache.set("sales-today", resp_json, timeout=120)
-                logging.warning("Sales cache refreshed ✅")
-            except Exception as exc:
-                logging.warning("Sales refresh failed: %s", exc)
-
-sched.add_job(refresh_sales_cache, "interval", minutes=1, next_run_time=None)
+# ── schedule *immediately*, no WERKZEUG_RUN_MAIN guard  ──────────────
+sched.add_job(
+    refresh_sales_cache,
+    trigger="interval",
+    minutes=1,
+    id="sales_refresh",            # id so we can replace if code reloads
+    replace_existing=True,
+    next_run_time=None             # run once right after start
+)
 sched.start()
-logging.warning("BackgroundScheduler started in child process")
+
+# optional: shut down cleanly when worker exits
+atexit.register(lambda: sched.shutdown(wait=False))
+
+# optional: see it work in the logs
+logging.getLogger("apscheduler").setLevel(logging.INFO)
+
 
 
 @app.route('/merma_dashboard')
