@@ -4,34 +4,38 @@
 {% block head %}
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
 <style>
+  /* ───── grid / cards ───── */
   .grid{display:grid;gap:1rem;}
   @media (min-width:576px){.grid{grid-template-columns:repeat(2,1fr);} }
   @media (min-width:768px){.grid{grid-template-columns:repeat(3,1fr);} }
-
   .inv-card{cursor:pointer;transition:.25s;}
   .inv-card:hover{transform:translateY(-2px);box-shadow:0 .5rem 1rem rgba(0,0,0,.1);}
-
   .fade-page{animation:fade .25s both;}
   @keyframes fade{from{opacity:0;transform:translateY(8px);} to{opacity:1;}}
 
-  /* nav & back buttons */
+  /* ───── nav / back ───── */
   #crumb{position:sticky;top:0;z-index:100;background:#fff;padding:.5rem 0;}
-  #backBtn{padding:.5rem .75rem!important;line-height:1;}
-  #backBtn i{font-size:2rem;}          /* bigger icon */
+  #backBtn{padding:.5rem .75rem!important;}
+  #backBtn i{font-size:2rem;}
   #backFab{width:4rem;height:4rem;border-radius:50%;display:none;place-items:center;}
 
-  .form-switch .form-check-input{width:3.1rem;height:1.55rem;cursor:pointer;transition:.25s;}
-  .form-switch .form-check-input:focus{box-shadow:none;}
-
-  /* breadcrumb links */
   .crumb-link{cursor:pointer;text-decoration:none;color:inherit;}
   .crumb-link:hover{text-decoration:underline;}
+
+  /* ───── add card ───── */
+  .add-card{border:dashed 2px var(--bs-primary);color:var(--bs-primary);}
+  .add-card:hover{background:var(--bs-primary-bg-subtle);}
+
+  /* ───── floating labels helper ───── */
+  @media (min-width:576px){
+    .form-floating>label{position:static;transform:none;}
+    .form-floating>.form-control{padding:.5rem .75rem;}
+  }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container py-3">
-  <!-- breadcrumb -->
   <nav id="crumb" class="d-flex align-items-center mb-3">
     <button id="backBtn" class="btn btn-link p-0 me-2 d-none">
       <i class="bi bi-arrow-left"></i>
@@ -39,18 +43,16 @@
     <span id="crumbText" class="fw-semibold"></span>
   </nav>
 
-  <!-- viewport -->
   <div id="view" class="fade-page"></div>
 </div>
 
-<!-- floating back FAB -->
 <button id="backFab"
         class="btn btn-primary position-fixed shadow"
         style="bottom:1rem;left:1rem;z-index:1050;">
   <i class="bi bi-arrow-left fs-4 text-white"></i>
 </button>
 
-<!-- toast for long details -->
+<!-- toast -->
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index:1080">
   <div id="toast" class="toast align-items-center text-bg-secondary border-0" role="alert">
     <div class="d-flex">
@@ -60,7 +62,7 @@
   </div>
 </div>
 
-<!-- value-entry modal -->
+<!-- ───────── value-entry modal ───────── -->
 <div class="modal fade" id="valueModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -93,12 +95,63 @@
   </div>
 </div>
 
-<!-- Bootstrap JS bundle -->
+<!-- ───────── new-item modal ───────── -->
+<div class="modal fade" id="newItemModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Crear artículo de inventario</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="invForm">
+          <div class="row g-3">
+            <div class="col-12 col-sm-6">
+              <label class="form-label fw-semibold" for="ni_area_sel">Área *</label>
+              <select id="ni_area_sel" class="form-select" required></select>
+              <input id="ni_area_new" class="form-control mt-2 d-none" placeholder="Nueva área">
+            </div>
+            <div class="col-12 col-sm-6">
+              <label class="form-label fw-semibold" for="ni_cat_sel">Categoría *</label>
+              <select id="ni_cat_sel" class="form-select" required></select>
+              <input id="ni_cat_new" class="form-control mt-2 d-none" placeholder="Nueva categoría">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold" for="ni_name">Nombre del producto *</label>
+              <input id="ni_name" class="form-control" required>
+            </div>
+            <div class="col-12 col-sm-6">
+              <label class="form-label fw-semibold" for="ni_meas_sel">Unidad de medida *</label>
+              <select id="ni_meas_sel" class="form-select" required>
+                <option disabled selected value="">Selecciona…</option>
+                <option value="unidades">Unidades</option>
+                <option value="gramos">Gramos</option>
+                <option value="litros">Litros</option>
+                <option value="_new">Añadir nueva…</option>
+              </select>
+              <input id="ni_meas_new" class="form-control mt-2 d-none" placeholder="Nueva unidad">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold" for="ni_details">Detalles (opcional)</label>
+              <textarea id="ni_details" rows="3" class="form-control"
+                        placeholder="Descripción, nota interna, etc."></textarea>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button id="ni_saveBtn" class="btn btn-primary">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
 (() => {
-  /* ---------- data ---------- */
+  /* -------- data -------- */
   const raw={{ inventory | tojson }};
   const byArea={};
   raw.forEach(r=>{
@@ -106,13 +159,17 @@
     byArea[r.area][r.category].push(r);
   });
 
-  /* ---------- refs ---------- */
+  const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+  const warn=v=>(v==null||v===0)?'text-danger fw-semibold':'text-success';
+
+  /* -------- refs -------- */
   const view=document.getElementById('view');
   const crumb=document.getElementById('crumbText');
   const backBtn=document.getElementById('backBtn');
   const fab=document.getElementById('backFab');
-
-  const modal=new bootstrap.Modal('#valueModal');
+  const toast=new bootstrap.Toast(document.getElementById('toast'));
+  const toastBody=document.getElementById('toastBody');
+  const valModal=new bootstrap.Modal('#valueModal');
   const mTitle=document.getElementById('modalTitle');
   const mMeasure=document.getElementById('modalMeasure');
   const mDetails=document.getElementById('modalDetails');
@@ -121,41 +178,91 @@
   const locLabel=document.getElementById('locLabel');
   const saveBtn=document.getElementById('saveBtn');
 
-  const toast=new bootstrap.Toast(document.getElementById('toast'));
-  const toastBody=document.getElementById('toastBody');
+  const newModal=new bootstrap.Modal('#newItemModal');
+  const areaSel=document.getElementById('ni_area_sel');
+  const areaNew=document.getElementById('ni_area_new');
+  const catSel=document.getElementById('ni_cat_sel');
+  const catNew=document.getElementById('ni_cat_new');
+  const nameInp=document.getElementById('ni_name');
+  const measSel=document.getElementById('ni_meas_sel');
+  const measNew=document.getElementById('ni_meas_new');
+  const detailsInp=document.getElementById('ni_details');
+  const niSaveBtn=document.getElementById('ni_saveBtn');
 
-  /* ---------- state ---------- */
-  let nav=[];      // [], [area], [area,cat]
-  let currentId=null;
-  const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
-  const warn=v=>(v==null||v===0)?'text-danger fw-semibold':'text-success';
+  /* -------- state -------- */
+  let nav=[], currentId=null;
 
-  /* ---------- breadcrumb ---------- */
-  function drawBreadcrumb(){
-    if(nav.length===0){ crumb.textContent='Áreas'; return; }
+  /* -------- breadcrumb -------- */
+  function drawCrumb(){
+    if(nav.length===0){crumb.textContent='Áreas';return;}
     let html=`<a class="crumb-link" data-level="root">Áreas</a> / `;
     if(nav.length>=1){
-      html+=nav.length===1
-        ? `<span class="fw-semibold text-decoration-underline">${cap(nav[0])}</span>`
-        : `<a class="crumb-link" data-level="area">${cap(nav[0])}</a> / `;
+      html+=nav.length===1?`<span class="fw-semibold">${cap(nav[0])}</span>`
+        :`<a class="crumb-link" data-level="area">${cap(nav[0])}</a> / `;
     }
-    if(nav.length===2){
-      html+=`<span class="fw-semibold text-decoration-underline">${cap(nav[1])}</span>`;
-    }
+    if(nav.length===2) html+=`<span class="fw-semibold">${cap(nav[1])}</span>`;
     crumb.innerHTML=html;
-    crumb.querySelectorAll('.crumb-link').forEach(a=>{
-      a.onclick=e=>{
-        const lvl=e.target.dataset.level;
-        nav = lvl==='root' ? [] : [nav[0]];
-        render();
-      };
+    crumb.querySelectorAll('.crumb-link').forEach(l=>{
+      l.onclick=()=>{nav=l.dataset.level==='root'?[]:[nav[0]];render();};
     });
   }
 
-  /* ---------- render ---------- */
+  /* -------- rendering -------- */
+  const makeGrid=(list,cb)=>{
+    const g=document.createElement('div');g.className='grid';
+    list.forEach(t=>{
+      const c=document.createElement('div');
+      c.className='card inv-card shadow-sm rounded-3';
+      c.innerHTML=`<div class="card-body text-center py-4 fw-semibold text-capitalize">${t.replace('_',' ')}</div>`;
+      c.onclick=()=>cb(t);
+      g.appendChild(c);
+    });
+    view.appendChild(g);
+  };
+
+  function countsBlock(p){ return `
+    <span class="${warn(p.tienda)}">En&nbsp;tienda:&nbsp;${p.tienda??'-'}</span>
+    <span class="${warn(p.bodega)}">En&nbsp;bodega:&nbsp;${p.bodega??'-'}</span>
+    <span class="text-muted small mt-1">Actualizado:&nbsp;${p.added}</span>
+    <span class="text-muted small">por&nbsp;usuario:&nbsp;${p.user}</span>`; }
+
+  function makeProdCard(p){
+    const needs=p.tienda==null&&p.bodega==null;
+    const card=document.createElement('div');
+    card.className='card inv-card shadow-sm rounded-3';
+    card.dataset.pid=p.id;
+    card.innerHTML=`
+      <div class="card-body d-flex flex-column align-items-center py-3">
+        <div class="fw-semibold text-center text-dark">${p.name}</div>
+        <small class="text-muted">${p.measure}</small>
+        ${needs?`<div class="mt-2 small text-danger fw-semibold">Hace&nbsp;falta&nbsp;conteo</div>`
+               :`<div class="mt-3 small d-flex flex-column align-items-center counts">${countsBlock(p)}</div>`}
+        ${p.details?`<button type="button" class="btn btn-link p-0 mt-2 text-info info-btn"><i class="bi bi-info-circle"></i></button>`:''}
+      </div>`;
+    card.onclick=()=>openValModal(p);
+    card.querySelector('.info-btn')?.addEventListener('click',e=>{
+      e.preventDefault();e.stopPropagation();
+      toastBody.textContent=p.details;toast.show();
+    });
+    return card;
+  }
+
+  function productGrid(list){
+    const g=document.createElement('div');g.className='grid';
+    list.forEach(p=>g.appendChild(makeProdCard(p)));
+    const add=document.createElement('div');
+    add.className='card inv-card add-card rounded-3';
+    add.innerHTML=`<div class="card-body d-flex flex-column align-items-center justify-content-center py-5">
+                     <i class="bi bi-plus-lg fs-2 mb-2"></i>
+                     <span class="fw-semibold">Crear nuevo producto</span>
+                   </div>`;
+    add.onclick=openNewModal;
+    g.appendChild(add);
+    view.appendChild(g);
+  }
+
   function render(){
-    view.innerHTML='';
-    drawBreadcrumb();
+    view.innerHTML=''; drawCrumb();
     const showBack=nav.length>0;
     backBtn.classList.toggle('d-none',!showBack);
     fab.style.display=showBack?'grid':'none';
@@ -168,69 +275,18 @@
       productGrid(byArea[nav[0]][nav[1]]);
     }
   }
-  const makeGrid=(list,cb)=>{
-    const g=document.createElement('div');g.className='grid';
-    list.forEach(t=>{
-      const card=document.createElement('div');
-      card.className='card inv-card shadow-sm rounded-3';
-      card.innerHTML=`<div class="card-body text-center py-4 fw-semibold text-capitalize">${t.replace('_',' ')}</div>`;
-      card.onclick=()=>cb(t);
-      g.appendChild(card);
-    });
-    view.appendChild(g);
-  };
-  const productGrid=list=>{
-    const g=document.createElement('div');g.className='grid';
-    list.forEach(p=>{
-      const needs=p.tienda==null&&p.bodega==null;
-      const card=document.createElement('div');
-      card.className='card inv-card shadow-sm rounded-3';
-      card.dataset.pid=p.id;
 
-      card.innerHTML=`
-        <div class="card-body d-flex flex-column align-items-center py-3">
-          <div class="fw-semibold text-center text-dark">${p.name}</div>
-          <small class="text-muted">${p.measure}</small>
-          ${needs?`<div class="mt-2 small text-danger fw-semibold">Hace&nbsp;falta&nbsp;conteo</div>`
-                 :`<div class="mt-3 small d-flex flex-column align-items-center counts">
-                      <span class="${warn(p.tienda)}">En&nbsp;tienda:&nbsp;${p.tienda??'-'}</span>
-                      <span class="${warn(p.bodega)}">En&nbsp;bodega:&nbsp;${p.bodega??'-'}</span>
-                    </div>`}
-          ${p.details?`<button type="button" class="btn btn-link p-0 mt-2 text-info info-btn">
-                         <i class="bi bi-info-circle"></i></button>`:''}
-        </div>`;
-      card.onclick=()=>openModal(p);
-      card.querySelector('.info-btn')?.addEventListener('click',e=>{
-        e.preventDefault();e.stopPropagation();
-        toastBody.textContent=p.details;toast.show();
-      });
-      g.appendChild(card);
-    });
-    view.appendChild(g);
-  };
-
-  /* ---------- modal ---------- */
-  function openModal(p){
+  /* -------- value modal -------- */
+  function openValModal(p){
     currentId=p.id;
-    mTitle.textContent=p.name;
-    mMeasure.textContent=p.measure;
-    mDetails.textContent=p.details||'';
-    mDetails.style.display=p.details?'block':'none';
+    mTitle.textContent=p.name; mMeasure.textContent=p.measure;
+    mDetails.textContent=p.details||'';mDetails.style.display=p.details?'block':'none';
     valInput.value='';valInput.classList.remove('is-invalid');
     locSwitch.checked=false;locLabel.textContent='Tienda';
-    modal.show();
+    valModal.show();
   }
   locSwitch.onchange=()=>locLabel.textContent=locSwitch.checked?'Bodega':'Tienda';
 
-  const updateCounts=id=>{
-    const prod=raw.find(x=>x.id===id);
-    const c=document.querySelector(`[data-pid="${id}"] .counts`);
-    if(c){
-      c.innerHTML=
-        `<span class="${warn(prod.tienda)}">En&nbsp;tienda:&nbsp;${prod.tienda??'-'}</span>
-         <span class="${warn(prod.bodega)}">En&nbsp;bodega:&nbsp;${prod.bodega??'-'}</span>`;
-    }
-  };
   saveBtn.onclick=async()=>{
     const val=parseFloat(valInput.value);
     if(isNaN(val)||val<0){valInput.classList.add('is-invalid');return;}
@@ -238,34 +294,81 @@
     const loc=locSwitch.checked?'bodega':'tienda';
     try{
       const res=await fetch(`/inventory/${currentId}/value`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
+        method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({value:val,location:loc})
       });
-      if(!res.ok) throw new Error('Error al guardar');
-      raw.find(x=>x.id===currentId)[loc]=val;   // local update
-      modal.hide(); updateCounts(currentId);
-    }catch(e){alert(e.message);}
-    finally{saveBtn.disabled=false;}
+      if(!res.ok) throw new Error();
+      const prod=raw.find(x=>x.id===currentId);
+      prod[loc]=val;
+      prod.added=(new Date()).toLocaleString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+      prod.user='tú';  // opcional: sobrescribe con current_user en respuesta JSON
+      valModal.hide(); updateCounts(currentId);
+    }catch{alert('Error');}finally{saveBtn.disabled=false;}
   };
 
-  /* ---------- back & swipe ---------- */
+  function updateCounts(id){
+    const prod=raw.find(x=>x.id===id);
+    const card=document.querySelector(`[data-pid="${id}"]`);
+    if(!card) return;
+    let counts=card.querySelector('.counts');
+    if(!counts){
+      card.querySelector('.text-danger')?.remove();
+      counts=document.createElement('div');
+      counts.className='mt-3 small d-flex flex-column align-items-center counts';
+      card.querySelector('.card-body').appendChild(counts);
+    }
+    counts.innerHTML=countsBlock(prod);
+  }
+
+  /* -------- new-item modal logic (unchanged) -------- */
+  function hide(el){el.classList.add('d-none'); el.required=false; el.value='';}
+  function show(el){el.classList.remove('d-none'); el.required=true;}
+  function fillArea(){
+    areaSel.innerHTML='<option disabled selected value="">Selecciona…</option>';
+    Object.keys(byArea).forEach(a=>areaSel.insertAdjacentHTML('beforeend',`<option value="${a}">${cap(a)}</option>`));
+    areaSel.insertAdjacentHTML('beforeend','<option value="_new">Añadir nueva…</option>');
+    if(nav[0]) areaSel.value=nav[0];
+  }
+  function fillCat(area){
+    catSel.innerHTML='<option disabled selected value="">Selecciona…</option>';
+    if(byArea[area]) Object.keys(byArea[area]).forEach(c=>catSel.insertAdjacentHTML('beforeend',`<option value="${c}">${cap(c)}</option>`));
+    catSel.insertAdjacentHTML('beforeend','<option value="_new">Añadir nueva…</option>');
+    if(nav[1]&&area===nav[0]) catSel.value=nav[1]; hide(catNew);
+  }
+  function openNewModal(){
+    fillArea(); fillCat(areaSel.value);
+    hide(areaNew); hide(measNew); nameInp.value='';measSel.value='';detailsInp.value='';
+    newModal.show();
+  }
+  areaSel.onchange=()=>{areaSel.value==='_new'?show(areaNew):hide(areaNew);fillCat(areaSel.value)};
+  catSel.onchange=()=>{catSel.value==='_new'?show(catNew):hide(catNew);};
+  measSel.onchange=()=>{measSel.value==='_new'?show(measNew):hide(measNew);};
+  niSaveBtn.onclick=async()=>{
+    const areaV=areaSel.value=='_new'?areaNew.value.trim().toLowerCase():areaSel.value;
+    const catV =catSel.value=='_new'?catNew.value.trim().toLowerCase():catSel.value;
+    const measV=measSel.value=='_new'?measNew.value.trim().toLowerCase():measSel.value;
+    if(!areaV||!catV||!nameInp.value.trim()||!measV){alert('Campos requeridos');return;}
+    const payload={product_area:areaV,product_category:catV,product_name:nameInp.value.trim(),measure:measV,details:detailsInp.value.trim()};
+    try{
+      niSaveBtn.disabled=true;
+      const res=await fetch('/save_inventory_item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      if(!res.ok) throw new Error();
+      const prod=await res.json();
+      raw.push(prod); (byArea[prod.area]??={})[prod.category]??=[]; byArea[prod.area][prod.category].push(prod);
+      newModal.hide(); render();
+    }catch{alert('Error');}finally{niSaveBtn.disabled=false;}
+  };
+
+  /* -------- back / swipe -------- */
   const goBack=()=>{if(nav.length){nav.pop();render();}};
-  backBtn.onclick=goBack; fab.onclick=goBack;
+  backBtn.onclick=goBack;fab.onclick=goBack;
   (()=>{let sx=0,sy=0;
-    window.addEventListener('touchstart',e=>{
-      if(e.touches.length===1){sx=e.touches[0].clientX;sy=e.touches[0].clientY;}
-    },{passive:true});
-    window.addEventListener('touchend',e=>{
-      if(!sx)return;
-      const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;
-      if(dx<-60&&Math.abs(dx)>Math.abs(dy))goBack();
-      sx=sy=0;
-    },{passive:true});
+    window.addEventListener('touchstart',e=>{if(e.touches.length===1){sx=e.touches[0].clientX;sy=e.touches[0].clientY;}},{passive:true});
+    window.addEventListener('touchend',e=>{if(!sx)return;const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;
+      if(dx<-60&&Math.abs(dx)>Math.abs(dy))goBack();sx=sy=0;},{passive:true});
   })();
 
-  /* ---------- boot ---------- */
-  render();
+  render();  /* boot */
 })();
 </script>
 {% endblock %}

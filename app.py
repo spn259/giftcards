@@ -1159,29 +1159,82 @@ def expense_detail(expense_id: int):
 def create_inventory_item():
     return render_template("create_inventory_item.html")
 
+from datetime import datetime
+from flask import request, jsonify, flash, abort
+from flask_login import login_required, current_user
+
 @app.post("/save_inventory_item")
 @login_required
 def save_inventory_item():
-    # 1. Resolve category / measure
-    category = (request.form.get("product_category") == "_new"
-                and request.form.get("new_category") or request.form.get("product_category"))
-    measure  = (request.form.get("measure") == "_new"
-                and request.form.get("new_measure") or request.form.get("measure"))
-    
-    username = getattr(current_user, "username", None)
+    """
+    Accepts:
+      • JSON: sent by the single-page dashboard (Content-Type: application/json)
+      • Form data: fallback for the old <form method="POST"> page
+    Returns:
+      JSON describing the newly created product
+    """
 
-    item = InventoryProducts(
-        product_area=request.form["product_area"],
-        product_category=category,
-        product_name=request.form["product_name"].strip(),
-        measure=measure,
-        details=request.form.get("details"),
-        username=username,
-        added=datetime.now()
+    # ---------- 1. Read input (JSON first, else form) ----------
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+        product_area      = data.get("product_area")
+        product_category  = data.get("product_category")
+        product_name      = (data.get("product_name") or "").strip()
+        measure           = data.get("measure")
+        details           = data.get("details", "")
+    else:
+        # legacy form fields
+        product_area = request.form.get("product_area")
+        product_category = (
+            request.form.get("product_category") == "_new"
+            and request.form.get("new_category")
+            or request.form.get("product_category")
+        )
+        measure = (
+            request.form.get("measure") == "_new"
+            and request.form.get("new_measure")
+            or request.form.get("measure")
+        )
+        product_name = request.form.get("product_name", "").strip()
+        details      = request.form.get("details", "")
+
+    # ---------- 2. Basic validation ----------
+    if not all([product_area, product_category, product_name, measure]):
+        abort(400, "Missing required fields")
+
+    # ---------- 3. Create DB row ----------
+    username = getattr(current_user, "username", None)
+    new = InventoryProducts(
+        product_area     = product_area.lower(),
+        product_category = product_category.lower(),
+        product_name     = product_name,
+        measure          = measure.lower(),
+        details          = details,
+        username         = username,
+        added            = datetime.now()
     )
-    db.session.add(item)
+    db.session.add(new)
     db.session.commit()
-    flash("Artículo guardado.", "success")
+
+    # flash only for classic form submits
+    if not request.is_json:
+        flash("Artículo guardado.", "success")
+
+    # ---------- 4. JSON response for front-end ----------
+    return (
+        jsonify(
+            id       = new.id,
+            area     = new.product_area,
+            category = new.product_category,
+            name     = new.product_name,
+            measure  = new.measure,
+            details  = new.details,
+            tienda   = None,
+            bodega   = None,
+        ),
+        201,
+    )
+
     return redirect(url_for("create_inventory_item"))
 
 from pandas import DataFrame
@@ -1198,53 +1251,56 @@ import pandas as pd
 
 # @app.route("/show_inventory_item", methods=["GET", "POST"])
 # @login_required
-def build_inventory():
+from collections import defaultdict
+from sqlalchemy import func, cast, Numeric
 
-    # ── 1. All products (one row each) ────────────────────────────
-    prod_cols = (
+def build_inventory():
+    # 1. products ---------------------------------------------------
+    prows = db.session.query(
         InventoryProducts.id,
         InventoryProducts.product_area,
         InventoryProducts.product_category,
         InventoryProducts.product_name,
         InventoryProducts.details,
         InventoryProducts.measure,
-    )
-    prows = db.session.query(*prod_cols).all()
+        InventoryProducts.added,        # ← new
+        InventoryProducts.username      # ← new
+    ).all()
 
-    # ── 2. Totals per product/location  ───────────────────────────
-    # cast VARCHAR → NUMERIC before summing
+    # 2. summed counts ---------------------------------------------
     crows = (
         db.session.query(
             InventoryCounts.product_id,
             InventoryCounts.location,
-            func.sum(cast(InventoryCounts.value, Numeric)).label("total"),
+            func.sum(cast(InventoryCounts.value, Numeric)).label("total")
         )
         .group_by(InventoryCounts.product_id, InventoryCounts.location)
         .all()
     )
-
-    counts = defaultdict(dict)          # {product_id: {"tienda": n, "bodega": m}}
+    counts = defaultdict(dict)
     for pid, loc, total in crows:
         counts[pid][loc] = total
 
-    # ── 3. Merge into list-of-dicts sent to template ──────────────
+    # 3. merge ------------------------------------------------------
     inventory = []
     for r in prows:
         pid = r.id
         inventory.append(
             dict(
-                id=pid,
-                area=r.product_area,
-                category=r.product_category,
-                name=r.product_name,
-                measure=r.measure,
-                details=r.details,
-                tienda=counts.get(pid, {}).get("tienda"),   # None if missing
-                bodega=counts.get(pid, {}).get("bodega"),
+                id       = pid,
+                area     = r.product_area,
+                category = r.product_category,
+                name     = r.product_name,
+                measure  = r.measure,
+                details  = r.details,
+                added    = r.added.strftime("%d/%m/%Y %H:%M"),  # → “05/06/2025 13:45”
+                user     = r.username or "—",
+                tienda   = counts.get(pid, {}).get("tienda"),
+                bodega   = counts.get(pid, {}).get("bodega"),
             )
         )
-
     return inventory
+
 
 @app.get("/inventory_dashboard")
 @login_required
