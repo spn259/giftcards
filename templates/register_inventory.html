@@ -3,31 +3,18 @@
 {% block title %}Inventario{% endblock %}
 
 {% block head %}
-<link rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
 <style>
   .grid{display:grid;gap:1rem;}
   @media (min-width:576px){.grid{grid-template-columns:repeat(2,1fr);} }
   @media (min-width:768px){.grid{grid-template-columns:repeat(3,1fr);} }
-
   .inv-card{cursor:pointer;transition:.25s;}
   .inv-card:hover{transform:translateY(-2px);box-shadow:0 .5rem 1rem rgba(0,0,0,.1);}
-
   .fade-page{animation:fade .25s both;}
   @keyframes fade{from{opacity:0;transform:translateY(8px);} to{opacity:1;}}
-
   #crumb{position:sticky;top:0;z-index:100;background:#fff;padding:.5rem 0;}
-
-  /* Floating back FAB visible when deeper than level-0 */
-  #backFab{
-    width:3.25rem;height:3.25rem;border-radius:50%;
-    display:none;place-items:center;
-  }
-
-  /* Pill slider */
-  .form-switch .form-check-input{
-    width:3.1rem;height:1.55rem;cursor:pointer;transition:.25s;
-  }
+  #backFab{width:3.25rem;height:3.25rem;border-radius:50%;display:none;place-items:center;}
+  .form-switch .form-check-input{width:3.1rem;height:1.55rem;cursor:pointer;transition:.25s;}
   .form-switch .form-check-input:focus{box-shadow:none;}
 </style>
 {% endblock %}
@@ -35,7 +22,6 @@
 {% block content %}
 <div class="container py-3">
 
-  <!-- Breadcrumb + top back arrow -->
   <nav id="crumb" class="d-flex align-items-center mb-3">
     <button id="backBtn" class="btn btn-link p-0 me-2 d-none">
       <i class="bi bi-arrow-left fs-5"></i>
@@ -43,27 +29,14 @@
     <span id="crumbText" class="fw-semibold"></span>
   </nav>
 
-  <!-- Drill-down viewport -->
   <div id="view" class="fade-page"></div>
 </div>
 
-<!-- Floating back button (all screens) -->
 <button id="backFab"
         class="btn btn-primary position-fixed shadow"
         style="bottom:1rem;left:1rem;z-index:1050;">
   <i class="bi bi-arrow-left fs-4 text-white"></i>
 </button>
-
-<!-- Toast for long product details -->
-<div class="position-fixed bottom-0 end-0 p-3" style="z-index:1080">
-  <div id="toast" class="toast align-items-center text-bg-secondary border-0">
-    <div class="d-flex">
-      <div id="toastBody" class="toast-body"></div>
-      <button class="btn-close btn-close-white me-2 m-auto"
-              data-bs-dismiss="toast"></button>
-    </div>
-  </div>
-</div>
 
 <!-- Value-entry modal -->
 <div class="modal fade" id="valueModal" tabindex="-1">
@@ -73,19 +46,16 @@
         <h5 id="modalTitle" class="modal-title"></h5>
         <button class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-
       <div class="modal-body">
         <div class="text-center mb-3">
           <span id="modalMeasure" class="badge bg-secondary"></span>
           <p id="modalDetails" class="small text-muted mb-0"></p>
         </div>
-
         <div class="form-floating mb-4">
-          <input id="valueInput" type="number" step="any" min="0"
+          <input id="valueInput" type="number" min="0" step="any"
                  class="form-control" placeholder="Valor">
           <label for="valueInput">Valor</label>
         </div>
-
         <div class="d-flex justify-content-center mb-4">
           <div class="form-switch">
             <input id="locSwitch" class="form-check-input" type="checkbox">
@@ -93,7 +63,6 @@
           <span id="locLabel" class="ms-3 fw-semibold align-self-center">Tienda</span>
         </div>
       </div>
-
       <div class="modal-footer">
         <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
         <button id="saveBtn" class="btn btn-primary">Guardar</button>
@@ -106,39 +75,35 @@
 
 <script>
 (() => {
-  /* -------- 1. Group inventory by area → category -------- */
-  const items = {{ inventory | tojson }};
-  const byArea = {};
+  /* ---------- data ---------- */
+  const items   = {{ inventory | tojson }};
+  const current = {{ selected | tojson | default('null') }};
+  const byArea  = {};
   items.forEach(r=>{
     (byArea[r.area] ??= {})[r.category] ??= [];
     byArea[r.area][r.category].push(r);
   });
 
-  /* -------- 2. Refs -------- */
+  /* ---------- DOM refs ---------- */
   const view     = document.getElementById('view');
   const crumbTxt = document.getElementById('crumbText');
   const crumbBtn = document.getElementById('backBtn');
   const fab      = document.getElementById('backFab');
 
-  /* modal refs */
-  const modal       = new bootstrap.Modal('#valueModal');
-  const mTitle      = document.getElementById('modalTitle');
-  const mMeasure    = document.getElementById('modalMeasure');
-  const mDetails    = document.getElementById('modalDetails');
-  const valInput    = document.getElementById('valueInput');
-  const locSwitch   = document.getElementById('locSwitch');
-  const locLabel    = document.getElementById('locLabel');
-  const saveBtn     = document.getElementById('saveBtn');
+  const modal      = new bootstrap.Modal('#valueModal');
+  const mTitle     = document.getElementById('modalTitle');
+  const mMeasure   = document.getElementById('modalMeasure');
+  const mDetails   = document.getElementById('modalDetails');
+  const valInput   = document.getElementById('valueInput');
+  const locSwitch  = document.getElementById('locSwitch');
+  const locLabel   = document.getElementById('locLabel');
+  const saveBtn    = document.getElementById('saveBtn');
 
-  const toast       = new bootstrap.Toast(document.getElementById('toast'));
-  const toastBody   = document.getElementById('toastBody');
-
-  let nav = [];            // [], [area], [area,cat]
-  let currentId = null;    // active product id in modal
-
+  let nav = [];          // [], [area], [area,cat]
+  let currentId = null;  // product currently in modal
   const cap = s => s.charAt(0).toUpperCase()+s.slice(1);
 
-  /* -------- 3. Render drill-down -------- */
+  /* ---------- render drill-down ---------- */
   function render(){
     view.innerHTML='';
     view.classList.remove('fade-page'); void view.offsetWidth;
@@ -148,35 +113,30 @@
     crumbBtn.classList.toggle('d-none', !showBack);
     fab.style.display = showBack ? 'grid' : 'none';
 
-    if(nav.length === 0){
-      crumbTxt.textContent = 'Áreas';
-      cardGrid(Object.keys(byArea), a => { nav=[a]; render(); });
-    }
-    else if(nav.length === 1){
-      const [area] = nav;
-      crumbTxt.textContent = cap(area);
-      cardGrid(Object.keys(byArea[area]), c => { nav=[area,c]; render(); });
-    }
-    else{
-      const [area,cat] = nav;
-      crumbTxt.textContent = `${cap(area)} / ${cap(cat)}`;
-      productGrid(byArea[area][cat]);
+    if(nav.length===0){
+      crumbTxt.textContent='Áreas';
+      cardGrid(Object.keys(byArea), a=>{ nav=[a]; render(); });
+    }else if(nav.length===1){
+      crumbTxt.textContent=cap(nav[0]);
+      cardGrid(Object.keys(byArea[nav[0]]), c=>{ nav=[nav[0],c]; render(); });
+    }else{
+      crumbTxt.textContent=`${cap(nav[0])} / ${cap(nav[1])}`;
+      productGrid(byArea[nav[0]][nav[1]]);
     }
   }
 
-  function cardGrid(items, cb){
+  function cardGrid(list, onClick){
     const g=document.createElement('div'); g.className='grid';
-    items.forEach(t=>{
-      const c=document.createElement('div');
-      c.className='card inv-card shadow-sm rounded-3';
-      c.innerHTML=`<div class="card-body text-center py-4 fw-semibold text-capitalize">${t.replace('_',' ')}</div>`;
-      c.onclick=()=>cb(t);
-      g.appendChild(c);
+    list.forEach(txt=>{
+      const el=document.createElement('div');
+      el.className='card inv-card shadow-sm rounded-3';
+      el.innerHTML=`<div class="card-body text-center py-4 fw-semibold text-capitalize">${txt.replace('_',' ')}</div>`;
+      el.onclick=()=>onClick(txt);
+      g.appendChild(el);
     });
     view.appendChild(g);
   }
 
-  /* -------- 4. Product cards → modal -------- */
   function productGrid(list){
     const g=document.createElement('div'); g.className='grid';
     list.forEach(p=>{
@@ -194,49 +154,58 @@
   }
 
   function openModal(p){
-    currentId = p.id;
-    mTitle.textContent   = p.name;
-    mMeasure.textContent = p.measure;
-    mDetails.textContent = p.details ?? '';
-    mDetails.style.display = p.details ? 'block':'none';
-    valInput.value = ''; valInput.classList.remove('is-invalid');
-    locSwitch.checked = false; locLabel.textContent='Tienda';
+    currentId=p.id;
+    mTitle.textContent=p.name;
+    mMeasure.textContent=p.measure;
+    mDetails.textContent=p.details ?? '';
+    mDetails.style.display=p.details?'block':'none';
+    valInput.value=''; valInput.classList.remove('is-invalid');
+    locSwitch.checked=false; locLabel.textContent='Tienda';
     modal.show();
   }
 
-  /* location slider label */
-  locSwitch.onchange = () => locLabel.textContent = locSwitch.checked ? 'Bodega' : 'Tienda';
+  locSwitch.onchange=()=>locLabel.textContent=locSwitch.checked?'Bodega':'Tienda';
 
-  /* save */
-  saveBtn.onclick = async () => {
-    const val = parseFloat(valInput.value);
-    if(isNaN(val)||val<0){
-      valInput.classList.add('is-invalid'); return;
-    }
+  /* ---------- save & redirect ---------- */
+  saveBtn.onclick=async ()=>{
+    const val=parseFloat(valInput.value);
+    if(isNaN(val)||val<0){ valInput.classList.add('is-invalid'); return; }
     valInput.classList.remove('is-invalid');
     saveBtn.disabled=true;
 
     try{
-      const res = await fetch(`/inventory/${currentId}/value`,{
+      const res=await fetch(`/inventory/${currentId}/value`,{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          value: val,
-          location: locSwitch.checked ? 'bodega':'tienda'
+        body:JSON.stringify({
+          value:val,
+          location:locSwitch.checked?'bodega':'tienda'
         })
       });
       if(!res.ok) throw new Error('Error al guardar');
       modal.hide();
-    }catch(e){ alert(e.message); }
-    finally{ saveBtn.disabled=false; }
+
+      /* ---- NEW: build URL with ?path=area/cat ---- */
+      const url=new URL('/show_inventory_item', window.location.origin);
+      if(nav.length>=2){ url.searchParams.set('path', `${nav[0]}/${nav[1]}`); }
+      else if(nav.length===1){ url.searchParams.set('path', nav[0]); }
+      setTimeout(()=>window.location=url, 300);   // allow modal animation
+    }catch(e){
+      alert(e.message);
+    }finally{
+      saveBtn.disabled=false;
+    }
   };
 
-  /* back buttons */
-  const goBack = ()=>{ if(nav.length){ nav.pop(); render(); } };
-  crumbBtn.onclick = goBack; fab.onclick = goBack;
+  const goBack=()=>{ if(nav.length){ nav.pop(); render(); } };
+  crumbBtn.onclick=goBack; fab.onclick=goBack;
 
-  /* boot */
   render();
+  if(current){
+    nav=[current.area,current.category];
+    render();
+    openModal(current);
+  }
 })();
 </script>
 {% endblock %}

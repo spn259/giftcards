@@ -1,60 +1,43 @@
 {% extends "base.html" %}
-
 {% block title %}Inventario{% endblock %}
 
 {% block head %}
-<link rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
 <style>
   .grid{display:grid;gap:1rem;}
   @media (min-width:576px){.grid{grid-template-columns:repeat(2,1fr);} }
   @media (min-width:768px){.grid{grid-template-columns:repeat(3,1fr);} }
-
   .inv-card{cursor:pointer;transition:.25s;}
   .inv-card:hover{transform:translateY(-2px);box-shadow:0 .5rem 1rem rgba(0,0,0,.1);}
-
   .fade-page{animation:fade .25s both;}
   @keyframes fade{from{opacity:0;transform:translateY(8px);} to{opacity:1;}}
-
   #crumb{position:sticky;top:0;z-index:100;background:#fff;padding:.5rem 0;}
-
-  /* floating back FAB always available */
-  #backFab{
-    width:3.25rem;height:3.25rem;border-radius:50%;
-    display:none;place-items:center;   /* JS toggles display grid/none */
-  }
+  #backFab{width:3.25rem;height:3.25rem;border-radius:50%;display:none;place-items:center;}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container py-3">
-
-  <!-- Breadcrumb / top back arrow -->
   <nav id="crumb" class="d-flex align-items-center mb-3">
     <button id="backBtn" class="btn btn-link p-0 me-2 d-none">
       <i class="bi bi-arrow-left fs-5"></i>
     </button>
     <span id="crumbText" class="fw-semibold"></span>
   </nav>
-
-  <!-- Dynamic viewport -->
   <div id="view" class="fade-page"></div>
 </div>
 
-<!-- Floating back button (now on ALL devices) -->
 <button id="backFab"
         class="btn btn-primary position-fixed shadow"
         style="bottom:1rem;left:1rem;z-index:1050;">
   <i class="bi bi-arrow-left fs-4 text-white"></i>
 </button>
 
-<!-- Toast for product details -->
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index:1080">
   <div id="toast" class="toast align-items-center text-bg-secondary border-0" role="alert">
     <div class="d-flex">
       <div id="toastBody" class="toast-body"></div>
-      <button type="button" class="btn-close btn-close-white me-2 m-auto"
-              data-bs-dismiss="toast"></button>
+      <button class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
     </div>
   </div>
 </div>
@@ -63,93 +46,114 @@
 
 <script>
 (() => {
-  /* ---------- 1. Data ---------- */
-  const raw = {{ inventory|tojson }};
-  const byArea = {};
+  /* ---------- Data ---------- */
+  const raw={{ inventory | tojson }};
+  const byArea={};
   raw.forEach(r=>{
     (byArea[r.area] ??= {})[r.category] ??= [];
     byArea[r.area][r.category].push(r);
   });
 
-  /* ---------- 2. DOM refs ---------- */
-  const view   = document.getElementById('view');
-  const crumbT = document.getElementById('crumbText');
-  const topBack= document.getElementById('backBtn');
-  const fab    = document.getElementById('backFab');
-  const toast  = new bootstrap.Toast(document.getElementById('toast'));
-  const toastBody = document.getElementById('toastBody');
+  const params=new URLSearchParams(location.search);
+  let nav=params.get('path')?.split('/')||[];
 
-  let stack = [];   // navigation depth
+  /* ---------- DOM ---------- */
+  const view=document.getElementById('view');
+  const crumbTxt=document.getElementById('crumbText');
+  const topBack=document.getElementById('backBtn');
+  const fab=document.getElementById('backFab');
+  const toast=new bootstrap.Toast(document.getElementById('toast'));
+  const toastBody=document.getElementById('toastBody');
 
-  /* ---------- 3. Helpers ---------- */
-  const cap = s => s.charAt(0).toUpperCase()+s.slice(1);
+  /* ---------- Helpers ---------- */
+  const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+  const warnCls=v=>(v==null||v===0)?'text-danger fw-semibold':'text-success';
+  const updateURL=()=>{
+    const url=new URL(location.href);
+    nav.length?url.searchParams.set('path',nav.join('/'))
+              :url.searchParams.delete('path');
+    history.replaceState(null,'',url);
+  };
 
+  /* ---------- Render ---------- */
   function render(){
     view.innerHTML='';
-    view.classList.remove('fade-page'); void view.offsetWidth;
+    view.classList.remove('fade-page');void view.offsetWidth;
     view.classList.add('fade-page');
+    const showBack=nav.length>0;
+    topBack.classList.toggle('d-none',!showBack);
+    fab.style.display=showBack?'grid':'none';
 
-    const showBack = stack.length>0;
-    topBack.classList.toggle('d-none', !showBack);
-    fab.style.display = showBack ? 'grid' : 'none';
-
-    if(!stack.length){
-      crumbT.textContent='Áreas';
-      cardGrid(Object.keys(byArea), a => { stack=[a]; render(); });
-    }
-    else if(stack.length===1){
-      const [area]=stack;
-      crumbT.textContent=cap(area);
-      cardGrid(Object.keys(byArea[area]), c => { stack=[area,c]; render(); });
-    }
-    else{
-      const [area,cat]=stack;
-      crumbT.textContent=`${cap(area)} / ${cap(cat)}`;
-      productGrid(byArea[area][cat]);
+    if(nav.length===0){
+      crumbTxt.textContent='Áreas';
+      grid(Object.keys(byArea),a=>{nav=[a];updateURL();render();});
+    }else if(nav.length===1){
+      crumbTxt.textContent=cap(nav[0]);
+      grid(Object.keys(byArea[nav[0]]),c=>{nav=[nav[0],c];updateURL();render();});
+    }else{
+      crumbTxt.textContent=`${cap(nav[0])} / ${cap(nav[1])}`;
+      productGrid(byArea[nav[0]][nav[1]]);
     }
   }
-
-  function cardGrid(items, onClick){
-    const g=document.createElement('div'); g.className='grid';
-    items.forEach(txt=>{
-      const card=document.createElement('div');
-      card.className='card inv-card shadow-sm rounded-3';
-      card.innerHTML=`<div class="card-body text-center py-4 fw-semibold text-capitalize">${txt.replace('_',' ')}</div>`;
-      card.onclick=()=>onClick(txt);
-      g.appendChild(card);
+  const grid=(list,cb)=>{
+    const g=document.createElement('div');g.className='grid';
+    list.forEach(t=>{
+      const el=document.createElement('div');
+      el.className='card inv-card shadow-sm rounded-3';
+      el.innerHTML=`<div class="card-body text-center py-4 fw-semibold text-capitalize">${t.replace('_',' ')}</div>`;
+      el.onclick=()=>cb(t);
+      g.appendChild(el);
     });
     view.appendChild(g);
-  }
-
-  function productGrid(list){
-    const g=document.createElement('div'); g.className='grid';
+  };
+  const productGrid=list=>{
+    const g=document.createElement('div');g.className='grid';
     list.forEach(p=>{
-      const a=document.createElement('a');
-      a.href=`/inventory/${p.id}/edit`;
-      a.className='card inv-card shadow-sm rounded-3 text-decoration-none';
-      a.dataset.details = p.details || '';
-      a.innerHTML=`
+      const needs=(p.tienda==null&&p.bodega==null);
+      const card=document.createElement('a');
+      card.href=`/inventory/${p.id}/edit`;
+      card.className='card inv-card shadow-sm rounded-3 text-decoration-none';
+      card.dataset.details=p.details||'';
+      card.innerHTML=`
         <div class="card-body d-flex flex-column align-items-center py-3">
           <div class="fw-semibold text-center text-dark">${p.name}</div>
           <small class="text-muted">${p.measure}</small>
-          ${p.details ? '<button type="button" class="btn btn-link p-0 mt-2 text-info info-btn"><i class="bi bi-info-circle"></i></button>':''}
+          ${needs?`<div class="mt-2 small text-danger fw-semibold">Hace&nbsp;falta&nbsp;conteo</div>`
+                 :`<div class="mt-2 small d-flex gap-3">
+                     <span class="${warnCls(p.tienda)}"><i class="bi bi-shop me-1"></i>${p.tienda??'-'}</span>
+                     <span class="${warnCls(p.bodega)}"><i class="bi bi-box-seam me-1"></i>${p.bodega??'-'}</span>
+                   </div>`}
+          ${p.details?`<button type="button" class="btn btn-link p-0 mt-2 text-info info-btn"><i class="bi bi-info-circle"></i></button>`:''}
         </div>`;
-      a.querySelector('.info-btn')?.addEventListener('click',e=>{
-        e.preventDefault(); e.stopPropagation();
-        toastBody.textContent = a.dataset.details;
-        toast.show();
+      card.querySelector('.info-btn')?.addEventListener('click',e=>{
+        e.preventDefault();e.stopPropagation();
+        toastBody.textContent=card.dataset.details;toast.show();
       });
-      g.appendChild(a);
+      g.appendChild(card);
     });
     view.appendChild(g);
-  }
+  };
 
-  /* ---------- 4. Back controls ---------- */
-  const goBack = () => { if(stack.length){ stack.pop(); render(); } };
-  topBack.onclick = goBack;
-  fab.onclick     = goBack;
+  /* ---------- Navigation ---------- */
+  const goBack=()=>{if(nav.length){nav.pop();updateURL();render();}};
+  topBack.onclick=goBack;fab.onclick=goBack;
 
-  /* ---------- 5. init ---------- */
+  /* ---------- NEW: swipe-back ---------- */
+  (()=>{let sx=0,sy=0;
+    window.addEventListener('touchstart',e=>{
+      if(e.touches.length!==1) return;
+      sx=e.touches[0].clientX;sy=e.touches[0].clientY;
+    },{passive:true});
+    window.addEventListener('touchend',e=>{
+      if(!sx)return;
+      const dx=e.changedTouches[0].clientX-sx,
+            dy=e.changedTouches[0].clientY-sy;
+      if(dx<-60 && Math.abs(dx)>Math.abs(dy)) goBack();
+      sx=sy=0;
+    },{passive:true});
+  })();
+
+  /* ---------- Boot ---------- */
   render();
 })();
 </script>

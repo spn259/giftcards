@@ -33,7 +33,7 @@ from flask_caching import Cache
 from apscheduler.schedulers.background import BackgroundScheduler
 from threading import Lock
 
-local = False
+local = True
 if local:
     from dotenv import load_dotenv
     from pathlib import Path
@@ -1184,42 +1184,112 @@ def save_inventory_item():
     flash("Artículo guardado.", "success")
     return redirect(url_for("create_inventory_item"))
 
-@app.route('/show_inventory_item', methods=['GET', 'POST'])
-@login_required
-def show_inventory_items():
-    items = pd.DataFrame(db.session.query(InventoryProducts.id, InventoryProducts.product_area, InventoryProducts.product_category, InventoryProducts.product_name, InventoryProducts.details, InventoryProducts.measure))
-    l = list()
-    for i, r in items.iterrows():
-        l.append({'id': r.id, 'area': r.product_area, 'category': r.product_category, 'name': r.product_name, 'measure': r.measure, 'details': r.details})
+from pandas import DataFrame
 
-    return render_template("show_inventory_items.html", inventory=l)
+# app.py
+from collections import defaultdict
+from sqlalchemy import func
+import pandas as pd
 
+# app.py
+from collections import defaultdict
+from sqlalchemy import func, cast, Numeric        #  ← add cast + Numeric
+import pandas as pd
 
-# @app.route("/inventory/<int:item_id>/edit", methods=["GET", "POST"])
+# @app.route("/show_inventory_item", methods=["GET", "POST"])
 # @login_required
-# def edit_inventory_item(item_id: int):
-#     items = pd.DataFrame(db.session.query(InventoryProducts.id, InventoryProducts.product_area, InventoryProducts.product_category, 
-#                                           InventoryProducts.product_name, InventoryProducts.details, 
-#                                           InventoryProducts.measure).filter(InventoryProducts.id == item_id))
-def row_to_dict(row):
-    return {c.name: getattr(row, c.name) for c in row.__table__.columns}
+def build_inventory():
 
-@app.get("/inventory/<int:item_id>/edit")
-@login_required
-def inventory_edit(item_id: int):
-    """
-    Display the page that lets the user enter a value for this product.
-    URL comes directly from the dashboard card:  /inventory/42/edit
-    """
-    item = db.session.get(InventoryProducts, item_id) or abort(404)
-    item = row_to_dict(item)
-    inventory = [row_to_dict(x) for x in db.session.query(InventoryProducts).all()]
-
-    return render_template(
-        "register_inventory.html",
-        item=item,
-        inventory=inventory          #  ← now defined
+    # ── 1. All products (one row each) ────────────────────────────
+    prod_cols = (
+        InventoryProducts.id,
+        InventoryProducts.product_area,
+        InventoryProducts.product_category,
+        InventoryProducts.product_name,
+        InventoryProducts.details,
+        InventoryProducts.measure,
     )
+    prows = db.session.query(*prod_cols).all()
+
+    # ── 2. Totals per product/location  ───────────────────────────
+    # cast VARCHAR → NUMERIC before summing
+    crows = (
+        db.session.query(
+            InventoryCounts.product_id,
+            InventoryCounts.location,
+            func.sum(cast(InventoryCounts.value, Numeric)).label("total"),
+        )
+        .group_by(InventoryCounts.product_id, InventoryCounts.location)
+        .all()
+    )
+
+    counts = defaultdict(dict)          # {product_id: {"tienda": n, "bodega": m}}
+    for pid, loc, total in crows:
+        counts[pid][loc] = total
+
+    # ── 3. Merge into list-of-dicts sent to template ──────────────
+    inventory = []
+    for r in prows:
+        pid = r.id
+        inventory.append(
+            dict(
+                id=pid,
+                area=r.product_area,
+                category=r.product_category,
+                name=r.product_name,
+                measure=r.measure,
+                details=r.details,
+                tienda=counts.get(pid, {}).get("tienda"),   # None if missing
+                bodega=counts.get(pid, {}).get("bodega"),
+            )
+        )
+
+    return inventory
+
+@app.get("/inventory_dashboard")
+@login_required
+def inventory_dashboard():
+    # `inventory` must already contain tienda & bodega counts (or None)
+    inventory = build_inventory()          # your existing helper
+    return render_template("inventory_dashboard.html", inventory=inventory)
+
+
+# def row_to_dict(row):
+#     return {c.name: getattr(row, c.name) for c in row.__table__.columns}
+
+# @app.get("/inventory/<int:item_id>/edit")
+# @login_required
+# def inventory_edit(item_id: int):
+#     row = db.session.get(InventoryProducts, item_id) or abort(404)
+
+#     # objeto con las claves que espera el front-end
+#     selected = {
+#         "id":       row.id,
+#         "area":     row.product_area,
+#         "category": row.product_category,
+#         "name":     row.product_name,
+#         "measure":  row.measure,
+#         "details":  row.details,
+#     }
+
+#     inventory = [
+#         {
+#             "id": r.id,
+#             "area": r.product_area,
+#             "category": r.product_category,
+#             "name": r.product_name,
+#             "measure": r.measure,
+#             "details": r.details,
+#         }
+#         for r in db.session.query(InventoryProducts).all()
+#     ]
+
+#     return render_template(
+#         "register_inventory.html",
+#         inventory=inventory,   
+#         selected=selected      
+#     )
+
 
 @app.post("/inventory/<int:item_id>/value")
 @login_required
@@ -1244,10 +1314,10 @@ def save_inventory_value(item_id: int):
     username = getattr(current_user, "username", None)
 
     # Example: insert a movement / update stock
-    mv = InventoryCounts(item_id=item.id,
+    mv = InventoryCounts(product_id=item.id,
                            value=val,
                            location=location,
-                           user_id=username, 
+                           username=username, 
                            added=datetime.now())
     db.session.add(mv)
     db.session.commit()
