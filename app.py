@@ -720,14 +720,6 @@ def pull_mods(order_id, box_id='aaf6eb61-bc43-4f5c-bf7e-086778897930'):
             all_mods.extend(mods)
     return all_mods
 
-# ── after you create `app = Flask(__name__)` ─────────────────────────
-from apscheduler.schedulers.background import BackgroundScheduler
-from threading import Lock
-import atexit, logging
-
-cache       = Cache(app)          # already in your code
-fetch_lock  = Lock()
-sched       = BackgroundScheduler(daemon=True)
 
 def refresh_sales_cache():
     """Poll PoloTab once a minute and cache the JSON result."""
@@ -740,23 +732,6 @@ def refresh_sales_cache():
             logging.warning("Sales cache refreshed ✅")
         except Exception as exc:
             logging.warning("Sales refresh failed: %s", exc)
-
-# ── schedule *immediately*, no WERKZEUG_RUN_MAIN guard  ──────────────
-sched.add_job(
-    refresh_sales_cache,
-    trigger="interval",
-    minutes=1,
-    id="sales_refresh",            # id so we can replace if code reloads
-    replace_existing=True,
-    next_run_time=None             # run once right after start
-)
-sched.start()
-
-# optional: shut down cleanly when worker exits
-atexit.register(lambda: sched.shutdown(wait=False))
-
-# optional: see it work in the logs
-logging.getLogger("apscheduler").setLevel(logging.INFO)
 
 
 
