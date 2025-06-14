@@ -14,22 +14,6 @@
   <form method="POST" action="{{ url_for('save_merma_counts') }}">
     {% if csrf_token %}{{ csrf_token() }}{% endif %}
 
-    <!-- ----------- NEW: date picker ----------- -->
-    <div class="row justify-content-center mb-4">
-      <div class="col-auto">
-        <label for="reportDate" class="form-label mb-1 fw-semibold">Fecha del reporte</label>
-        <input
-          type="date"
-          id="reportDate"
-          name="report_date"
-          class="form-control"
-           value="{{ selected_date }}"          
-           required
-        >
-      </div>
-    </div>
-    <!-- --------- /date picker --------- -->
-
     <div id="mermaList">
       {% for item in menu_items %}
       <div class="mb-4 text-center">

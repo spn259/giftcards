@@ -3,7 +3,7 @@
 
 {% block head %}
 <link rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
 <style>
   /*───────── grid / cards ─────────*/
   .grid{display:grid;gap:1rem;}
@@ -95,8 +95,6 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <!-- NEW BUTTON -->
-        <button id="editItemBtn" class="btn btn-outline-primary">Editar item</button>
         <button id="saveBtn" class="btn btn-primary">Guardar</button>
       </div>
     </div>
@@ -201,20 +199,32 @@
 
 <script>
 (() => {
-  /* ---------- data & helpers (unchanged) ---------- */
+  /* ---------- initial data ---------- */
   const raw={{ inventory | tojson }};
-  const byArea={}; raw.forEach(r=>{(byArea[r.area]??={})[r.category]??=[];byArea[r.area][r.category].push(r);});
+  const byArea={};
+  raw.forEach(r=>{
+    (byArea[r.area] ??= {})[r.category] ??= [];
+    byArea[r.area][r.category].push(r);
+  });
+
+  /* ---------- helpers ---------- */
+  const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
   const warn=v=>v==null||v===0?'text-danger fw-semibold':'text-success';
-  const counts=p=>`
+  const countsView=p=>`
     <span class="${warn(p.tienda)}">En&nbsp;tienda:&nbsp;${p.tienda??'-'}</span>
     <span class="${warn(p.bodega)}">En&nbsp;bodega:&nbsp;${p.bodega??'-'}</span>
     <span class="text-muted small mt-1">Actualizado:&nbsp;${p.added}</span>
     <span class="text-muted small">por&nbsp;usuario:&nbsp;${p.user}</span>`;
 
-  /* ---------- refs ---------- */
+  /* ---------- dom refs ---------- */
   const view=document.getElementById('view');
+  const crumb=document.getElementById('crumbText');
+  const backBtn=document.getElementById('backBtn');
+  const fab=document.getElementById('backFab');
+  const toast=new bootstrap.Toast(document.getElementById('toast'));
+  const toastBody=document.getElementById('toastBody');
+
   const valModal=new bootstrap.Modal('#valueModal');
-  const editModal=new bootstrap.Modal('#editItemModal');
   const mTitle=document.getElementById('modalTitle');
   const mMeasure=document.getElementById('modalMeasure');
   const mDetails=document.getElementById('modalDetails');
@@ -222,55 +232,254 @@
   const locSwitch=document.getElementById('locSwitch');
   const locLabel=document.getElementById('locLabel');
   const saveBtn=document.getElementById('saveBtn');
-  const editItemBtn=document.getElementById('editItemBtn');   // NEW button
 
-  let currentProd=null;      // set in openValueModal
+  const newModal=new bootstrap.Modal('#newItemModal');
+  const areaSel=document.getElementById('ni_area_sel');
+  const areaNew=document.getElementById('ni_area_new');
+  const catSel=document.getElementById('ni_cat_sel');
+  const catNew=document.getElementById('ni_cat_new');
+  const nameInp=document.getElementById('ni_name');
+  const measSel=document.getElementById('ni_meas_sel');
+  const measNew=document.getElementById('ni_meas_new');
+  const detailsInp=document.getElementById('ni_details');
+  const niSaveBtn=document.getElementById('ni_saveBtn');
 
-  /* ---------- product card builder (unchanged) ---------- */
-  function card(p){
+  const editModal=new bootstrap.Modal('#editItemModal');
+  const edAreaSel=document.getElementById('ed_area_sel');
+  const edAreaNew=document.getElementById('ed_area_new');
+  const edCatSel=document.getElementById('ed_cat_sel');
+  const edCatNew=document.getElementById('ed_cat_new');
+  const edName=document.getElementById('ed_name');
+  const edMeasSel=document.getElementById('ed_meas_sel');
+  const edMeasNew=document.getElementById('ed_meas_new');
+  const edDetails=document.getElementById('ed_details');
+  const edSave=document.getElementById('ed_saveBtn');
+
+  /* ---------- state ---------- */
+  let nav=[], currentId=null, editingId=null;
+
+  /* ---------- breadcrumb ---------- */
+  function drawCrumb(){
+    if(nav.length===0){crumb.textContent='Áreas';return;}
+    let html=`<a class="crumb-link" data-level="root">Áreas</a> / `;
+    if(nav.length>=1){
+      html+=nav.length===1?`<span class="fw-semibold">${cap(nav[0])}</span>`
+        :`<a class="crumb-link" data-level="area">${cap(nav[0])}</a> / `;
+    }
+    if(nav.length===2) html+=`<span class="fw-semibold">${cap(nav[1])}</span>`;
+    crumb.innerHTML=html;
+    crumb.querySelectorAll('.crumb-link').forEach(l=>{
+      l.onclick=()=>{nav=l.dataset.level==='root'?[]:[nav[0]];render();};
+    });
+  }
+
+  /* ---------- render ---------- */
+  function makeProdCard(p){
+    const needs=p.tienda==null&&p.bodega==null;
     const el=document.createElement('div');
     el.className='card inv-card shadow-sm rounded-3';
+    el.dataset.pid=p.id;
     el.innerHTML=`
       <div class="card-actions">
-        <button class="btn edit-btn"><i class="bi bi-pencil-square"></i></button>
-        ${p.details?'<button class="btn info-btn"><i class="bi bi-info-circle"></i></button>':''}
+        <button class="btn btn-link text-primary edit-btn"><i class="bi bi-pencil-square"></i></button>
+        ${p.details?'<button class="btn btn-link text-info info-btn"><i class="bi bi-info-circle"></i></button>':''}
       </div>
-      <div class="card-body text-center py-3">
-        <div class="fw-semibold">${p.name}</div>
+      <div class="card-body d-flex flex-column align-items-center py-3">
+        <div class="fw-semibold text-center text-dark">${p.name}</div>
         <small class="text-muted">${p.measure}</small>
-        <div class="counts mt-3 small d-flex flex-column align-items-center">${counts(p)}</div>
+        ${needs?'<div class="mt-2 small text-danger fw-semibold">Hace&nbsp;falta&nbsp;conteo</div>'
+               :`<div class="mt-3 small d-flex flex-column align-items-center counts">${countsView(p)}</div>`}
       </div>`;
-    el.onclick=()=>openValueModal(p);
+    el.onclick=()=>openValModal(p);
     el.querySelector('.edit-btn').onclick=e=>{e.stopPropagation();openEditModal(p);};
-    el.querySelector('.info-btn')?.addEventListener('click',e=>{e.stopPropagation();alert(p.details);});
+    el.querySelector('.info-btn')?.addEventListener('click',e=>{
+      e.stopPropagation();toastBody.textContent=p.details;toast.show();
+    });
     return el;
   }
 
-  /* ---------- open value modal ---------- */
-  function openValueModal(p){
-    currentProd=p;
-    mTitle.textContent=p.name;
-    mMeasure.textContent=p.measure;
-    mDetails.textContent=p.details||'';mDetails.style.display=p.details?'block':'none';
-    valInput.value='';locSwitch.checked=false;locLabel.textContent='Tienda';
+  function grid(list,cb){
+    const g=document.createElement('div');g.className='grid';
+    list.forEach(t=>{
+      const card=document.createElement('div');
+      card.className='card inv-card shadow-sm rounded-3';
+      card.innerHTML=`<div class="card-body text-center py-4 fw-semibold text-capitalize">${t.replace('_',' ')}</div>`;
+      card.onclick=()=>cb(t);
+      g.appendChild(card);
+    });
+    view.appendChild(g);
+  }
+  function productGrid(list){
+    const g=document.createElement('div');g.className='grid';
+    list.forEach(p=>g.appendChild(makeProdCard(p)));
+    const add=document.createElement('div');
+    add.className='card inv-card add-card rounded-3';
+    add.innerHTML=`<div class="card-body d-flex flex-column align-items-center justify-content-center py-5">
+                     <i class="bi bi-plus-lg fs-2 mb-2"></i>
+                     <span class="fw-semibold">Crear nuevo producto</span>
+                   </div>`;
+    add.onclick=openNewModal;
+    g.appendChild(add);
+    view.appendChild(g);
+  }
+
+  function render(){
+    view.innerHTML=''; drawCrumb();
+    const showBack=nav.length>0;
+    backBtn.classList.toggle('d-none',!showBack);
+    fab.style.display=showBack?'grid':'none';
+
+    if(nav.length===0){
+      grid(Object.keys(byArea),a=>{nav=[a];render();});
+    }else if(nav.length===1){
+      grid(Object.keys(byArea[nav[0]]),c=>{nav=[nav[0],c];render();});
+    }else{
+      productGrid(byArea[nav[0]][nav[1]]);
+    }
+  }
+
+  /* ---------- value modal logic ---------- */
+  function openValModal(prod){
+    currentId=prod.id;
+    mTitle.textContent=prod.name;
+    mMeasure.textContent=prod.measure;
+    mDetails.textContent=prod.details||''; mDetails.style.display=prod.details?'block':'none';
+    locSwitch.checked=false; locLabel.textContent='Tienda';
+    valInput.value=''; valInput.classList.remove('is-invalid');
     valModal.show();
   }
-
-  /* ---------- wire NEW button ---------- */
-  editItemBtn.onclick=()=>{        // open edit modal for same product
-    valModal.hide();
-    openEditModal(currentProd);
+  locSwitch.onchange=()=>locLabel.textContent=locSwitch.checked?'Bodega':'Tienda';
+  saveBtn.onclick=async()=>{
+    const val=parseFloat(valInput.value);
+    if(isNaN(val)||val<0){valInput.classList.add('is-invalid');return;}
+    const loc=locSwitch.checked?'bodega':'tienda';
+    try{
+      saveBtn.disabled=true;
+      const res=await fetch(`/inventory/${currentId}/value`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({value:val,location:loc})
+      });
+      if(!res.ok) throw new Error();
+      const prod=raw.find(x=>x.id===currentId);
+      prod[loc]=val;
+      prod.added=(new Date()).toLocaleString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+      prod.user='tú';
+      valModal.hide(); updateCounts(currentId);
+    }catch{alert('Error');}finally{saveBtn.disabled=false;}
   };
-
-  /* ---------- open edit modal (your existing code) ---------- */
-  function openEditModal(p){
-    // fill selects & fields here …
-    editModal.show();
+  function updateCounts(id){
+    const prod=raw.find(x=>x.id===id);
+    const card=document.querySelector(`[data-pid="${id}"]`);
+    let counts=card.querySelector('.counts');
+    if(!counts){
+      card.querySelector('.text-danger')?.remove();
+      counts=document.createElement('div');
+      counts.className='mt-3 small d-flex flex-column align-items-center counts';
+      card.querySelector('.card-body').appendChild(counts);
+    }
+    counts.innerHTML=countsView(prod);
   }
 
-  /* ---------- very small demo render ---------- */
-  view.appendChild(card(raw[0]));   // show first item; replace with your real render()
+  /* ---------- new-item modal logic ---------- */
+  function hide(el){el.classList.add('d-none');el.required=false;el.value='';}
+  function show(el){el.classList.remove('d-none');el.required=true;}
 
+  const fillAreas=()=>{areaSel.innerHTML='<option disabled selected value="">Selecciona…</option>';
+    Object.keys(byArea).forEach(a=>areaSel.insertAdjacentHTML('beforeend',`<option>${a}</option>`));
+    areaSel.insertAdjacentHTML('beforeend','<option value="_new">Añadir nueva…</option>');
+    if(nav[0]) areaSel.value=nav[0];
+  };
+  const fillCats=a=>{
+    catSel.innerHTML='<option disabled selected value="">Selecciona…</option>';
+    if(byArea[a]) Object.keys(byArea[a]).forEach(c=>catSel.insertAdjacentHTML('beforeend',`<option>${c}</option>`));
+    catSel.insertAdjacentHTML('beforeend','<option value="_new">Añadir nueva…</option>');
+    if(nav[1]&&a===nav[0]) catSel.value=nav[1]; hide(catNew);
+  };
+
+  function openNewModal(){fillAreas(); fillCats(areaSel.value); hide(areaNew); hide(measNew);
+    nameInp.value='';measSel.value='';detailsInp.value=''; newModal.show();}
+  areaSel.onchange=()=>{areaSel.value==='_new'?show(areaNew):hide(areaNew);fillCats(areaSel.value)};
+  catSel.onchange=()=>{catSel.value==='_new'?show(catNew):hide(catNew);};
+  measSel.onchange=()=>{measSel.value==='_new'?show(measNew):hide(measNew);};
+
+  niSaveBtn.onclick=async()=>{
+    const area=areaSel.value=='_new'?areaNew.value.trim().toLowerCase():areaSel.value;
+    const cat =catSel.value=='_new'?catNew.value.trim().toLowerCase():catSel.value;
+    const meas=measSel.value=='_new'?measNew.value.trim().toLowerCase():measSel.value;
+    if(!area||!cat||!nameInp.value.trim()||!meas){alert('Campos requeridos');return;}
+    try{
+      niSaveBtn.disabled=true;
+      const res=await fetch('/save_inventory_item',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({product_area:area,product_category:cat,product_name:nameInp.value.trim(),measure:meas,details:detailsInp.value.trim()})});
+      if(!res.ok) throw new Error();
+      const prod=await res.json();
+      raw.push(prod); (byArea[prod.area]??={})[prod.category]??=[]; byArea[prod.area][prod.category].push(prod);
+      newModal.hide(); render();
+    }catch{alert('Error');}finally{niSaveBtn.disabled=false;}
+  };
+
+  /* ---------- edit-item modal logic ---------- */
+  const eHide=el=>{el.classList.add('d-none');el.required=false;el.value='';};
+  const eShow=el=>{el.classList.remove('d-none');el.required=true;};
+
+  function fillEdit(a,c){
+    edAreaSel.innerHTML='<option disabled selected value="">Selecciona…</option>';
+    Object.keys(byArea).forEach(x=>edAreaSel.insertAdjacentHTML('beforeend',`<option>${x}</option>`));
+    edAreaSel.insertAdjacentHTML('beforeend','<option value="_new">Añadir nueva…</option>');
+    edAreaSel.value=a;
+
+    const loadCat=x=>{
+      edCatSel.innerHTML='<option disabled selected value="">Selecciona…</option>';
+      if(byArea[x]) Object.keys(byArea[x]).forEach(z=>edCatSel.insertAdjacentHTML('beforeend',`<option>${z}</option>`));
+      edCatSel.insertAdjacentHTML('beforeend','<option value="_new">Añadir nueva…</option>');
+      edCatSel.value=c; eHide(edCatNew);
+    };
+    loadCat(a);
+    edAreaSel.onchange=()=>{edAreaSel.value==='_new'?eShow(edAreaNew):eHide(edAreaNew);loadCat(edAreaSel.value)};
+    edCatSel.onchange=()=>{edCatSel.value==='_new'?eShow(edCatNew):eHide(edCatNew);} ;
+    edMeasSel.onchange=()=>{edMeasSel.value==='_new'?eShow(edMeasNew):eHide(edMeasNew);} ;
+  }
+
+  function openEditModal(p){
+    editingId=p.id;
+    fillEdit(p.area,p.category);
+    edName.value=p.name; edMeasSel.value=p.measure; edDetails.value=p.details||'';
+    eHide(edAreaNew);eHide(edMeasNew); editModal.show();
+  }
+
+  edSave.onclick=async()=>{
+    const a=edAreaSel.value=='_new'?edAreaNew.value.trim().toLowerCase():edAreaSel.value;
+    const c=edCatSel.value=='_new'?edCatNew.value.trim().toLowerCase():edCatSel.value;
+    const m=edMeasSel.value=='_new'?edMeasNew.value.trim().toLowerCase():edMeasSel.value;
+    if(!a||!c||!edName.value.trim()||!m){alert('Campos requeridos');return;}
+    try{
+      edSave.disabled=true;
+      const res=await fetch(`/update_inventory_item/${editingId}`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({product_area:a,product_category:c,product_name:edName.value.trim(),measure:m,details:edDetails.value.trim()})});
+      if(!res.ok) throw new Error();
+      const up=await res.json();
+      const prod=raw.find(x=>x.id===editingId);
+
+      if(prod.area!==up.area||prod.category!==up.category){
+        byArea[prod.area][prod.category]=byArea[prod.area][prod.category].filter(r=>r.id!==prod.id);
+        (byArea[up.area]??={})[up.category]??=[]; byArea[up.area][up.category].push(prod);
+      }
+      Object.assign(prod,{area:up.area,category:up.category,name:up.name,measure:up.measure,details:up.details,added:up.added,user:up.user});
+      editModal.hide(); render();
+    }catch{alert('Error');}finally{edSave.disabled=false;}
+  };
+
+  /* ---------- back / swipe ---------- */
+  const goBack=()=>{if(nav.length){nav.pop();render();}};
+  backBtn.onclick=goBack; fab.onclick=goBack;
+  (()=>{let sx=0,sy=0;
+    window.addEventListener('touchstart',e=>{if(e.touches.length===1){sx=e.touches[0].clientX;sy=e.touches[0].clientY;}},{passive:true});
+    window.addEventListener('touchend',e=>{if(!sx)return;const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;
+      if(dx<-60&&Math.abs(dx)>Math.abs(dy))goBack();sx=sy=0;},{passive:true});
+  })();
+
+  render();  // boot
 })();
 </script>
 {% endblock %}
