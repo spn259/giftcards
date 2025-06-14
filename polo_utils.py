@@ -30,10 +30,10 @@ def pull_polo_products():
         results.append((item['name'], item['description'], item['id']))
     return results
 
-def pull_polo_mods():
+def pull_polo_mods(prod_id=None):
 
     # Base URL and query parameters
-    url = "https://api.polotab.com/api/v1/chains/d01b50da-d2cb-4eb3-a446-1441b09723cd/modifier_sets/ed59a5bf-f9b6-4d72-b98e-11ba9b47d8e6?allChannels=false"
+    url = "https://api.polotab.com/api/v1/chains/d01b50da-d2cb-4eb3-a446-1441b09723cd/modifier_sets/{}?allChannels=false".format(prod_id)
 
 
     # Headers and cookie from your example request

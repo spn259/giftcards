@@ -426,12 +426,10 @@ def thankyou():
 
 
 @app.route('/admin_log_expense', methods=['GET', 'POST'])
-@login_required
 def admin_log_expense():
     return render_template('admin_registrar_gasto.html')
 
 @app.post("/extract_receipt_api")
-@login_required
 def extract_receipt_api():
     from receipt_utils import extract_receipts
     blobs = [f.read() for f in request.files.getlist("receipts")]
@@ -443,7 +441,6 @@ from datetime import datetime, timedelta
 import pytz
 
 @app.route("/admin_registrar_gasto", methods=["GET", "POST"])
-@login_required
 def admin_registrar_gasto():
     # ------------------------------------------------------------------ POST
     if request.method == "POST":
@@ -542,12 +539,16 @@ def refresh_products():
     polo_prods = pull_polo_products()
     polo_prods = pd.DataFrame(polo_prods, columns=['name', 'description', 'polo_id'])
     polo_prods['modifier'] = False
-    polo_mods = pull_polo_mods()
+    polo_mods =  list()
+    mod_ids = ['ed59a5bf-f9b6-4d72-b98e-11ba9b47d8e6', '55e38e78-53cd-4b18-a9c8-5d5daf487433']
+    for mod in mod_ids:
+        these_mods = pull_polo_mods(prod_id=mod)
+        polo_mods.extend(these_mods)
     polo_mods = pd.DataFrame(polo_mods, columns=['name', 'description', 'polo_id'])
     polo_mods['modifier'] = True
 
     polo_prods = pd.concat([polo_prods, polo_mods]).reset_index(drop=True)
-
+    print(polo_mods)
     for i, r in polo_prods.iterrows():
         if r.polo_id not in cur_prods.polo_id.tolist():
             fi = PoloProducts(product_name=r['name'], description=r.description, polo_id=r.polo_id, modifier=r.modifier, added=datetime.utcnow())
@@ -616,43 +617,73 @@ def enter_production_counts():
         d.append({'product_name': r.product_name, 'id': r.id})
 
     print(d)
+    from datetime import date
 
-    return render_template('production_counts.html', menu_items=d)
+    return render_template('production_counts.html', menu_items=d, selected_date=date.today().isoformat())
+
+from datetime import datetime, date, time
+import pytz
+from flask import request, render_template
 
 @app.route('/save_production_counts', methods=['GET', 'POST'])
 def save_production_counts():
+    # ── 1.  Constants / helpers ─────────────────────────────────
+    cst_tz = pytz.timezone("America/Mexico_City")
+
+    # ── 2.  Read scalar form fields ─────────────────────────────
     masa_global = request.form.get('masa_global', type=int, default=1)
-    
 
+    # Pick the user-selected date or default to today
+    report_date_str = request.form.get("report_date", "")         # '' if missing
+    if report_date_str:
+        try:
+            report_date = datetime.strptime(report_date_str, "%Y-%m-%d").date()
+        except ValueError:
+            report_date = date.today()                            # bad format → today
+    else:
+        report_date = date.today()
 
-    cst = pytz.timezone("America/Mexico_City")
-    now_cst = datetime.now(cst)
+    # Merge that date with midnight (00:00) and localise to MX-City,
+    # then strip tz-info so the DB receives a naïve datetime (like before)
+    added_dt = datetime.combine(report_date, time.min)            # 00:00
+    added_dt_naive = cst_tz.localize(added_dt).replace(tzinfo=None)
 
-    naive_cst = now_cst.replace(tzinfo=None)
-    menu_items = pd.DataFrame(db.session.query(Menus.id, Menus.product_name).filter(Menus.active == True).all())
+    # ── 3.  Look-up helpers ────────────────────────────────────
+    menu_items = pd.DataFrame(
+        db.session.query(Menus.id, Menus.product_name)
+                  .filter(Menus.active == True)
+                  .all()
+    )
     id_to_prod = dict(zip(menu_items.id.tolist(), menu_items.product_name.tolist()))
-    if request.method == "POST":
-        counts_by_name = {}
 
-        # 1. Extract all form fields of the form counts[<product_name>]
-        for full_key, val in request.form.items():
-            if full_key.startswith('counts[') and full_key.endswith(']'):
-                # slice out what's between the brackets
-                name = full_key[len('counts['):-1]  
+    # ── 4.  POST: persist counts ───────────────────────────────
+    if request.method == "POST":
+        counts_by_id = {}
+        for key, val in request.form.items():
+            if key.startswith('counts[') and key.endswith(']'):
+                prod_id = int(key[len('counts['):-1])
                 try:
                     qty = int(val)
                 except (ValueError, TypeError):
                     qty = 0
-                counts_by_name[int(name)] = qty
-            # Handle saving logic here
-        
-        for k, v in counts_by_name.items():
-            n = id_to_prod.get(k)
-            fi = ProductionCounts(product_name=n, n_items=v, added=naive_cst, dough_amount= masa_global)
-            db.session.add(fi)
-        
+                counts_by_id[prod_id] = qty
+
+        for prod_id, qty in counts_by_id.items():
+            product_name = id_to_prod.get(prod_id)
+            db.session.add(
+                ProductionCounts(
+                    product_name=product_name,
+                    n_items=qty,
+                    added=added_dt_naive,
+                    dough_amount=masa_global
+                )
+            )
+
         db.session.commit()
-        
+
+    # ── 5.  GET (or redirect/flash) behaviour, if any ─────────
+    # … your existing return/redirect logic …
+
 
         return "Products received"
     
@@ -764,24 +795,15 @@ def merma_dashboard():
 
     # end_dt  → 00:00 of day AFTER end_date (exclusive upper bound)
     end_dt   = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
-    print(start_str, end_str)
-    # Example
-    # resp = pull_polo_sales(start_str, end_str)
-    # Fast path: try cached copy first
-    resp = cache.get("sales-today")
-    if resp is None:
-        logging.warning("Pulled live polo sales.")
-        resp = pull_polo_sales(start_str, end_str).json()
-        cache.set("sales-today", resp, timeout=120)     # <-- fill on miss
-    else:
-        logging.warning("From cache.")
+  
+    resp = pull_polo_sales(start_str, end_str).json()
    
-    box_id = 'aaf6eb61-bc43-4f5c-bf7e-086778897930'
+    combo_ids = ['aaf6eb61-bc43-4f5c-bf7e-086778897930', 'a28b0e95-7888-4a8b-9af7-b2019ab3762f']
     d = dict()
     for order in resp['orders']:
         for prod in order['orderItems']:
             prod_id = prod['cartItem']['productId']
-            if prod_id == box_id:
+            if prod_id in combo_ids:
                 mods = pull_mods(prod['orderId'])
                 for item in mods:
                     prod_id, q = item
@@ -972,7 +994,7 @@ def match_polo_products():
     for example
     "GLASEADA ORIGINAL": [{{name: name, id: id, modifier: modifier}}, {{name: name, id: id, modifier: modifier}}]
 
-    Most will have two matches, one non-modifier and one modifier, return the 3 best matches.
+    Most will have two matches, one non-modifier and one modifier, return the 5 best matches.
 
     In the matches, include the polo id, and whether it is a modifier or not and name as keys
 
@@ -1075,7 +1097,6 @@ from flask import Response, stream_with_context
 # ... existing imports ...
 
 @app.route("/expense/<int:expense_id>/receipt/<int:index>")
-@login_required
 def expense_receipt(expense_id: int, index: int):
     """Stream one receipt (image or PDF). PDFs are forced inline."""
     exp = db.session.get(Expenses, expense_id) or abort(404)
@@ -1116,7 +1137,6 @@ def expense_receipt(expense_id: int, index: int):
 
 # ── route ──────────────────────────────────────────────────────────
 @app.route("/expense/<int:expense_id>")
-@login_required
 def expense_detail(expense_id: int):
     exp = db.session.get(Expenses, expense_id)
     if exp is None:
@@ -1310,42 +1330,6 @@ def inventory_dashboard():
     return render_template("inventory_dashboard.html", inventory=inventory)
 
 
-# def row_to_dict(row):
-#     return {c.name: getattr(row, c.name) for c in row.__table__.columns}
-
-# @app.get("/inventory/<int:item_id>/edit")
-# @login_required
-# def inventory_edit(item_id: int):
-#     row = db.session.get(InventoryProducts, item_id) or abort(404)
-
-#     # objeto con las claves que espera el front-end
-#     selected = {
-#         "id":       row.id,
-#         "area":     row.product_area,
-#         "category": row.product_category,
-#         "name":     row.product_name,
-#         "measure":  row.measure,
-#         "details":  row.details,
-#     }
-
-#     inventory = [
-#         {
-#             "id": r.id,
-#             "area": r.product_area,
-#             "category": r.product_category,
-#             "name": r.product_name,
-#             "measure": r.measure,
-#             "details": r.details,
-#         }
-#         for r in db.session.query(InventoryProducts).all()
-#     ]
-
-#     return render_template(
-#         "register_inventory.html",
-#         inventory=inventory,   
-#         selected=selected      
-#     )
-
 
 @app.post("/inventory/<int:item_id>/value")
 @login_required
@@ -1378,6 +1362,27 @@ def save_inventory_value(item_id: int):
     db.session.add(mv)
     db.session.commit()
     return {"ok": True}, 201
+
+@app.post("/update_inventory_item/<int:item_id>")
+@login_required
+def update_inventory_item(item_id):
+    data = request.get_json(silent=True) or {}
+    item = db.session.get(InventoryProducts, item_id) or abort(404)
+
+    for fld in ("product_area", "product_category",
+                "product_name", "measure", "details"):
+        if fld in data and data[fld] is not None:
+            setattr(item, fld, data[fld].strip().lower() if fld != "product_name" else data[fld].strip())
+
+    item.username = getattr(current_user, "username", None)
+    item.added = datetime.now()
+    db.session.commit()
+
+    return jsonify(
+        id=item.id, area=item.product_area, category=item.product_category,
+        name=item.product_name, measure=item.measure, details=item.details,
+        added=item.added.strftime("%d/%m/%Y %H:%M"), user=item.username
+    )
 
 
 # Run app locally
