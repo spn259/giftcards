@@ -105,8 +105,10 @@
 <div class="modal fade" id="newItemModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content">
-      <div class="modal-header"><h5 class="modal-title">Crear artículo de inventario</h5>
-        <button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-header">
+        <h5 class="modal-title">Crear artículo de inventario</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
       <div class="modal-body">
         <form id="invForm">
           <div class="row g-3">
@@ -154,8 +156,10 @@
 <div class="modal fade" id="editItemModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content">
-      <div class="modal-header"><h5 class="modal-title">Editar producto</h5>
-        <button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-header">
+        <h5 class="modal-title">Editar producto</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
       <div class="modal-body">
         <form id="editForm">
           <div class="row g-3">
@@ -224,6 +228,7 @@
   const toast=new bootstrap.Toast(document.getElementById('toast'));
   const toastBody=document.getElementById('toastBody');
 
+  /* ---------- modal refs (value/new/edit) ---------- */
   const valModal=new bootstrap.Modal('#valueModal');
   const mTitle=document.getElementById('modalTitle');
   const mMeasure=document.getElementById('modalMeasure');
@@ -257,6 +262,19 @@
 
   /* ---------- state ---------- */
   let nav=[], currentId=null, editingId=null;
+
+  /* ---------- reusable “Crear nuevo producto” card ---------- */
+  function makeAddCard(){
+    const add=document.createElement('div');
+    add.className='card inv-card add-card rounded-3';
+    add.innerHTML=`
+      <div class="card-body d-flex flex-column align-items-center justify-content-center py-5">
+        <i class="bi bi-plus-lg fs-2 mb-2"></i>
+        <span class="fw-semibold">Crear nuevo producto</span>
+      </div>`;
+    add.onclick=openNewModal;
+    return add;
+  }
 
   /* ---------- breadcrumb ---------- */
   function drawCrumb(){
@@ -307,19 +325,15 @@
       card.onclick=()=>cb(t);
       g.appendChild(card);
     });
+    /* NEW: add “Crear nuevo producto” here too */
+    g.appendChild(makeAddCard());
     view.appendChild(g);
   }
+
   function productGrid(list){
     const g=document.createElement('div');g.className='grid';
     list.forEach(p=>g.appendChild(makeProdCard(p)));
-    const add=document.createElement('div');
-    add.className='card inv-card add-card rounded-3';
-    add.innerHTML=`<div class="card-body d-flex flex-column align-items-center justify-content-center py-5">
-                     <i class="bi bi-plus-lg fs-2 mb-2"></i>
-                     <span class="fw-semibold">Crear nuevo producto</span>
-                   </div>`;
-    add.onclick=openNewModal;
-    g.appendChild(add);
+    g.appendChild(makeAddCard());
     view.appendChild(g);
   }
 

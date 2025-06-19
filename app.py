@@ -118,7 +118,7 @@ login_manager.remember_cookie_duration = timedelta(days=30)  # example: 30 d
 
 # ---- Cache config (Simple=memory; use "redis" in prod) -----------------
 app.config["CACHE_TYPE"] = "simple"
-app.config["CACHE_DEFAULT_TIMEOUT"] = 65          # seconds
+app.config["CACHE_DEFAULT_TIMEOUT"] = 165          # seconds
 cache = Cache(app)
 
 # ---- Background scheduler ----------------------------------------------
@@ -149,6 +149,12 @@ from flask_login import current_user, login_required
 
 # ✏️  Put the usernames you want to allow here
 ALLOWED_USERS = {"steven", "romina"}
+app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
+app.config.update(
+    REMEMBER_COOKIE_SECURE   = True,      # HTTPS only
+    REMEMBER_COOKIE_HTTPONLY = True,
+    REMEMBER_COOKIE_SAMESITE = "Lax",
+)
 
 def username_required(view_func):
     """Allow the route only for specific usernames."""
@@ -190,7 +196,7 @@ def login():
 
         user = User.query.filter_by(username=username).first()
         if user and check_password_hash(user.password, password):
-            login_user(user)
+            login_user(user, remember=True)
             flash("Login successful!", "success")
 
             # NEW: honour ?next= if it is a safe relative URL
@@ -424,7 +430,7 @@ def view_photos():
 def thankyou():
     return render_template('thankyou.html')
 
-
+@login_required
 @app.route('/admin_log_expense', methods=['GET', 'POST'])
 def admin_log_expense():
     return render_template('admin_registrar_gasto.html')
@@ -453,9 +459,7 @@ def admin_registrar_gasto():
             factura  = request.form.get("factura") == "si"
 
             expense_cat = request.form.get("expense_category")
-            biz_area    = request.form.get("business_area")
-            if not expense_cat or not biz_area:
-                raise ValueError("missing_category")
+
 
             details_json = request.form.get("raw_json") or "{}"
             details = json.loads(details_json)
@@ -474,7 +478,7 @@ def admin_registrar_gasto():
                 factura=factura,
                 payment_method=pay_meth,
                 category=expense_cat,
-                biz_area=biz_area,
+                biz_area=None,
                 reference_file_paths=[],
                 username=username,
             )

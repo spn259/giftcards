@@ -110,7 +110,7 @@ def extract_products(inputs: List[FileLike]) -> str:
         ],
         response_format={"type": "json_object"},
         temperature=0,
-        max_tokens=800,
+        max_tokens=1800,
     )
 
     content = response.choices[0].message.content
