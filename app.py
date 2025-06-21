@@ -798,7 +798,7 @@ def merma_dashboard():
     start_dt = datetime.combine(start_date, datetime.min.time())
 
     # end_dt  → 00:00 of day AFTER end_date (exclusive upper bound)
-    end_dt   = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+    end_dt   = datetime.combine(end_date, datetime.min.time())
   
     resp = pull_polo_sales(start_str, end_str).json()
    
@@ -863,7 +863,8 @@ def merma_dashboard():
         .filter(MermaCounts.added.between(start_dt, end_dt))
         .all()
     )
-   
+
+    print(merma_df)
 
 
     # ---------- 1.  Deduplicate MERMA by product + day ----------
@@ -874,16 +875,15 @@ def merma_dashboard():
                     .drop_duplicates(subset=["product_name", "date"], keep="last")
                     [["product_name", "n_merma"]]                # final tidy columns
         )
-        print(merma_df)
 
 
     # ---------- 2.  Deduplicate PRODUCCIÓN by product + day ----------
     if not prod_df.empty:
-        prod_df["date"] = prod_df["added"].dt.normalize()        # same bucket key
+        prod_df["date"] = prod_df["added"].dt.normalize()   
         prod_df = (
             prod_df.sort_values(["product_name", "added"])
                 .drop_duplicates(subset=["product_name", "date"], keep="last")
-                [["product_name", "n_prod"]]
+                [["product_name", "n_prod", "date"]]
         )
 
     
@@ -904,7 +904,7 @@ def merma_dashboard():
                 n_prod = tmp_prod.iloc[0]['n_prod']
                 n_prod = tmp_prod['n_prod'].sum()
             else:
-                n_prod = -1
+                n_prod = 0
         else:
             n_prod = 0 
        
