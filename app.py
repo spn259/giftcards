@@ -978,6 +978,8 @@ def expenses_dashboard():
     )
 
 
+
+
 @app.route('/match_polo_products', methods=['GET', 'POST'])
 def match_polo_products():
     all_prods = pd.DataFrame(db.session.query(Menus.product_name, Menus.description, Menus.id).filter(Menus.active == True).all())
@@ -1138,6 +1140,8 @@ def expense_receipt(expense_id: int, index: int):
     # Build plain Response instead of send_file → full header control
     return Response(body_iter, headers=headers)
 
+# ── route ──────────────────────────────────────────────────────────
+
 
 # ── route ──────────────────────────────────────────────────────────
 @app.route("/expense/<int:expense_id>")
@@ -1177,6 +1181,12 @@ def expense_detail(expense_id: int):
         items=items,
         files=files,
     )
+
+@app.post("/delete_expense/<int:expense_id>")
+def delete_expense(expense_id: int):
+    db.session.query(Expenses).filter(Expenses.id == expense_id).delete()
+    db.session.commit()
+    return redirect(url_for("expenses_dashboard"))
 
 @app.route('/create_inventory_item', methods=['GET', 'POST'])
 @login_required

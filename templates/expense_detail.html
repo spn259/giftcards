@@ -11,6 +11,19 @@
 
   <h2 class="fs-5 text-center mb-4">Expense #{{ expense.id }}</h2>
 
+  <!-- ── delete button ───────────────────────────────────────────── -->
+  <div class="text-end mb-3">
+    <form action="{{ url_for('delete_expense', expense_id=expense.id) }}"
+          method="post"
+          onsubmit="return confirm('¿Seguro que deseas borrar este gasto?');"
+          class="d-inline">
+      {#-- if you use Flask-WTF / CSRF, include {{ csrf_token() }} here --#}
+      <button type="submit" class="btn btn-danger btn-sm">
+        <i class="bi bi-trash"></i> Borrar gasto
+      </button>
+    </form>
+  </div>
+
   <!-- ── summary ── -->
   <dl class="row">
     <dt class="col-sm-3">Vendor</dt><dd class="col-sm-9">{{ expense.vendor }}</dd>
@@ -65,7 +78,6 @@
                    alt="Receipt {{ loop.index }}">
             </a>
           {% else %}
-            <!-- single viewer request → no duplicate download -->
             <embed src="{{ src }}" type="application/pdf"
                    class="w-100 rounded shadow-sm border"
                    style="min-height:600px;">

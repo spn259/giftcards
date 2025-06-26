@@ -66,6 +66,8 @@ def to_data_uri(blob: bytes, mime: str = "image/jpeg") -> str:
     b64 = base64.b64encode(blob).decode()
     return f"data:{mime};base64,{b64}"
 
+from datetime import datetime
+today = datetime.today()
 # ---------------------------------------------------------------------------
 SYSTEM_PROMPT = (
     "These are my only personal receipts and conversations I am trying to register "
@@ -78,6 +80,7 @@ SYSTEM_PROMPT = (
     "if it is not, try to guess the payment type from these options: ['Transferencia', 'Tarjeta', 'Efectivo']"
     "If the receipt is itemised, include an 'items' list with product, qty & price. "
     "Return JSON only—no comments."
+    "If the date is illegible or there is no date, default to today: {}".format(today)
 )
 
 # ---------------------------------------------------------------------------
