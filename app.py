@@ -786,6 +786,7 @@ def merma_dashboard():
     try:
         start_date = datetime.strptime(start_str, "%Y-%m-%d").date()
     except ValueError:
+        print("Defaulting to today")
         start_date = datetime.today().date()
 
     try:
@@ -798,7 +799,7 @@ def merma_dashboard():
     start_dt = datetime.combine(start_date, datetime.min.time())
 
     # end_dt  → 00:00 of day AFTER end_date (exclusive upper bound)
-    end_dt   = datetime.combine(end_date, datetime.min.time())
+    end_dt   = datetime.combine(end_date, datetime.max.time())
   
     resp = pull_polo_sales(start_str, end_str).json()
    
@@ -863,6 +864,7 @@ def merma_dashboard():
         .filter(MermaCounts.added.between(start_dt, end_dt))
         .all()
     )
+    print(start_dt, end_dt)
 
     print(merma_df)
 

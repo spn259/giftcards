@@ -1,12 +1,26 @@
+# polo_api.py  ← renamed for clarity
+import os
+from datetime import datetime, time, timedelta
 import requests
-import json
 import pytz
 import dateutil.parser
-from datetime import datetime, time, timedelta
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Productos
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────── CONFIG ────────────────────────────
+BACKOFFICE_TOKEN: str = os.getenv("backoffice_token", "").strip()
+
+if not BACKOFFICE_TOKEN:
+    raise RuntimeError(
+        "BACKOFFICE_TOKEN is missing. "
+        "Set it in your environment, e.g.:\n"
+        "   export BACKOFFICE_TOKEN='eyJhbGciOi...'"
+    )
+
+COOKIE_HEADER = f"backofficeUserCookie={BACKOFFICE_TOKEN}"
+COOKIE_DICT   = {"backofficeUserCookie": BACKOFFICE_TOKEN}
+
+CST = pytz.timezone("America/Mexico_City")
+
+# ─────────────────────────── Productos ─────────────────────────
 def pull_polo_products():
     url = (
         "https://api.polotab.com/api/v1/chains/"
@@ -15,7 +29,10 @@ def pull_polo_products():
 
     headers = {
         "Host": "api.polotab.com",
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:137.0) Gecko/20100101 Firefox/137.0",
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:137.0) "
+            "Gecko/20100101 Firefox/137.0"
+        ),
         "Accept": "*/*",
         "Accept-Language": "en-US,en;q=0.5",
         "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -23,12 +40,7 @@ def pull_polo_products():
         "Content-Type": "application/json",
         "Origin": "https://admin.polotab.com",
         "Connection": "keep-alive",
-        "Cookie": (
-            "backofficeUserCookie="
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-            "eyJpZCI6ImNjYzA2NWIxLTFmOWMtNDg5ZC04MWRjLTEzOTM2ODRmMmY2YSIsImlhdCI6MTc0NjAyOTM3MCwiZXhwIjoxNzUxMjEzMzcwfQ."
-            "gkKcvpgXKBdEVi8xVxEXgkEwfm1a9K9NGT4B5Ghe1l4"
-        ),
+        "Cookie": COOKIE_HEADER,
         "Sec-Fetch-Dest": "empty",
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-site",
@@ -37,19 +49,13 @@ def pull_polo_products():
         "Cache-Control": "no-cache",
     }
 
-    # ⏱️ 2-minute timeout
-    response = requests.get(url, headers=headers, timeout=120)
-
-    results = []
-    for item in response.json():
-        results.append((item["name"], item["description"], item["id"]))
-    return results
+    r = requests.get(url, headers=headers, timeout=120)
+    r.raise_for_status()
+    return [(it["name"], it["description"], it["id"]) for it in r.json()]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Modificadores
-# ─────────────────────────────────────────────────────────────────────────────
-def pull_polo_mods(prod_id=None):
+# ─────────────────────────── Modificadores ─────────────────────
+def pull_polo_mods(prod_id: str):
     url = (
         "https://api.polotab.com/api/v1/chains/"
         "d01b50da-d2cb-4eb3-a446-1441b09723cd/modifier_sets/"
@@ -69,28 +75,19 @@ def pull_polo_mods(prod_id=None):
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-site",
         "TE": "trailers",
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:137.0) Gecko/20100101 Firefox/137.0",
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:137.0) "
+            "Gecko/20100101 Firefox/137.0"
+        ),
     }
 
-    cookies = {
-        "backofficeUserCookie": (
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-            "eyJpZCI6ImNjYzA2NWIxLTFmOWMtNDg5ZC04MWRjLTEzOTM2ODRmMmY2YSIsImlhdCI6MTc0NjI4Nzk2NSwiZXhwIjoxNzUxNDcxOTY1fQ."
-            "ggFPFoF3Vbp6oOMFlOkyejKLceYAa3D_jnP2l6akZ_M"
-        )
-    }
-
-    # ⏱️ 2-minute timeout
-    response = requests.get(url, headers=headers, cookies=cookies, timeout=120)
-    j = response.json()
-    mods = [(x["name"], None, x["id"]) for x in j["modifiers"]]
-    return mods
+    r = requests.get(url, headers=headers, cookies=COOKIE_DICT, timeout=120)
+    r.raise_for_status()
+    j = r.json()
+    return [(m["name"], None, m["id"]) for m in j["modifiers"]]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Ventas
-# ─────────────────────────────────────────────────────────────────────────────
-CST = pytz.timezone("America/Mexico_City")
+# ─────────────────────────── Ventas ────────────────────────────
 API_URL = (
     "https://api.polotab.com/api/v1/restaurants/"
     "cd7d0f22-eb20-450e-b185-5ce412a3a8ea/orders/"
@@ -98,7 +95,10 @@ API_URL = (
 )
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:137.0) Gecko/20100101 Firefox/137.0",
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:137.0) "
+        "Gecko/20100101 Firefox/137.0"
+    ),
     "Accept": "*/*",
     "Accept-Language": "en-US,en;q=0.5",
     "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -106,87 +106,48 @@ HEADERS = {
     "Content-Type": "application/json",
     "Origin": "https://admin.polotab.com",
     "Connection": "keep-alive",
-    "Cookie": (
-        "backofficeUserCookie="
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-        "eyJpZCI6ImNjYzA2NWIxLTFmOWMtNDg5ZC04MWRjLTEzOTM2ODRmMmY2YSIsImlhdCI6MTc0NjAyOTM3MCwiZXhwIjoxNzUxMjEzMzcwfQ."
-        "gkKcvpgXKBdEVi8xVxEXgkEwfm1a9K9NGT4B5Ghe1l4"
-    ),
+    "Cookie": COOKIE_HEADER,
 }
 
-
-# ── helpers ────────────────────────────────────────────────────────────────
+# ── helpers ────────────────────────────────────────────────────
 def _cst_midnight(day: datetime) -> datetime:
-    """Return this calendar day’s midnight in CST (aware datetime)."""
     return CST.localize(datetime.combine(day.date(), time.min))
 
-
 def cst_range_to_utc_ms(start_day: datetime, end_day: datetime):
-    """
-    Return (start_ms, end_ms) for an **inclusive** CST date range.
-    `start_day` and `end_day` may contain a time part; only the dates matter.
-    """
     start_mid = _cst_midnight(start_day)
     end_nextmid = _cst_midnight(end_day) + timedelta(days=1)
-
     start_ms = int(start_mid.astimezone(pytz.utc).timestamp() * 1000)
     end_ms = int(end_nextmid.astimezone(pytz.utc).timestamp() * 1000) - 1
     return start_ms, end_ms
 
-
-# ── main function ─────────────────────────────────────────────────────────────
+# ── main fetch ─────────────────────────────────────────────────
 def pull_polo_sales(
-    start_date_str: str | None = None, end_date_str: str | None = None
+    start_date_str: str | None = None,
+    end_date_str: str | None = None,
 ) -> requests.Response:
-    """
-    Fetch PoloTab orders between two CST calendar dates **inclusive**.
-
-    Parameters
-    ----------
-    start_date_str : str | None
-        ISO-like date (e.g. "2025-05-01").  If None, defaults to **today**.
-    end_date_str   : str | None
-        ISO-like date.  If None, defaults to `start_date_str`
-        (→ single-day query identical to the old behaviour).
-
-    Returns
-    -------
-    requests.Response
-        Raw response from the PoloTab API.
-    """
-    # 1. Parse → aware datetimes in CST
     if start_date_str:
         start_dt = dateutil.parser.parse(start_date_str)
     else:
         start_dt = datetime.now(CST)
-
     if end_date_str:
         end_dt = dateutil.parser.parse(end_date_str)
     else:
         end_dt = start_dt
 
-    # Normalise to CST
     for var in ("start_dt", "end_dt"):
         dt = locals()[var]
-        if dt.tzinfo is None:
-            locals()[var] = CST.localize(dt)
-        else:
-            locals()[var] = dt.astimezone(CST)
+        locals()[var] = CST.localize(dt) if dt.tzinfo is None else dt.astimezone(CST)
 
-    # Swap if user reversed them
     if start_dt > end_dt:
         start_dt, end_dt = end_dt, start_dt
 
-    # 2. UTC millisecond bounds
     start_ms, end_ms = cst_range_to_utc_ms(start_dt, end_dt)
-
-    # 3. Call the API with 2-minute timeout
     url = API_URL.format(start=start_ms, end=end_ms)
     return requests.get(url, headers=HEADERS, timeout=120)
 
 
-# ── example usage ─────────────────────────────────────────────────────────────
+# ─── demo ──────────────────────────────────────────────────────
 if __name__ == "__main__":
-    # 2025-05-01 through 2025-05-07, inclusive
-    r = pull_polo_sales("2025-05-01", "2025-05-07")
-    print(r.status_code, r.json()[:2])  # peek at first two records
+    # export BACKOFFICE_TOKEN=... before running
+    sales = pull_polo_sales("2025-05-01", "2025-05-03")
+    print(sales.status_code, sales.json()[:1])
