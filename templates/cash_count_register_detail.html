@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Detalle de conteo{% endblock %}
+
+{% block content %}
+<div class="container py-4 fade-page">
+  <h2 class="fs-5 mb-3">
+    Conteo de {{ username }} &nbsp;
+    <small class="text-muted">{{ added_local.strftime("%Y-%m-%d %H:%M") }}</small>
+  </h2>
+
+  <div class="table-responsive">
+    <table class="table table-sm table-striped align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Denominación</th>
+          <th class="text-center">Cantidad</th>
+          <th class="text-end">Subtotal&nbsp;(MXN)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in detail %}
+        <tr>
+          <td>${{ row.denom }}</td>
+          <td class="text-center">{{ row.qty }}</td>
+          <td class="text-end">{{ row.subtotal }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="table-light">
+        <tr>
+          <th colspan="2" class="text-end">Total</th>
+          <th class="text-end">{{ total }}</th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <a href="{{ url_for('cash_count_registers') }}" class="btn btn-outline-secondary mt-3">
+    ← Volver a los registros
+  </a>
+</div>
+{% endblock %}

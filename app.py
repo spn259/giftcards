@@ -16,7 +16,7 @@ from flask_login import LoginManager, UserMixin
 
 from models import Expenses     
 from db import PostgresDB
-from models import Cards, Transactions, WorkerPin, CustomerPin, PoloProducts, Menus, ProductionCounts, MermaCounts, InventoryProducts, InventoryCounts
+from models import Cards, ChangeCount, Transactions, WorkerPin, CustomerPin, PoloProducts, Menus, ProductionCounts, MermaCounts, InventoryProducts, InventoryCounts
 import os
 import uuid
 from datetime import datetime, timezone
@@ -1398,6 +1398,138 @@ def update_inventory_item(item_id):
         id=item.id, area=item.product_area, category=item.product_category,
         name=item.product_name, measure=item.measure, details=item.details,
         added=item.added.strftime("%d/%m/%Y %H:%M"), user=item.username
+    )
+
+@app.route("/cash_count")
+def cash_count():
+        return render_template("cash_count.html")
+
+
+# … existing imports …
+from datetime import datetime
+from zoneinfo import ZoneInfo       # Python 3.9+
+
+MX_TZ = ZoneInfo("America/Mexico_City")
+
+@app.route("/save_cash_count", methods=["POST"])
+def save_cash_count():
+    print("HR")
+    cashier = (request.form.get("cashier") or "").strip()
+    if not cashier:
+        flash("El nombre del cajero es obligatorio.", "danger")
+        return redirect(request.referrer or "/")
+
+    # ── NEW: one shared timestamp for this submission ──
+    batch_time = datetime.now(MX_TZ)
+
+    rows = []
+    for key, raw_qty in request.form.items():
+        if key.startswith("counts[") and key.endswith("]"):
+            try:
+                denom = int(key[7:-1])
+                qty   = int(raw_qty or 0)
+            except ValueError:
+                continue
+
+            if qty > 0:
+                rows.extend(
+                    ChangeCount(username=cashier,
+                                denomination=denom,
+                                added=batch_time)   # ← same for every row
+                    for _ in range(qty)
+                )
+
+    if not rows:
+        flash("No se ingresaron cantidades mayores a 0.", "warning")
+        return redirect(request.referrer or "/")
+    print(rows)
+    db.session.add_all(rows)
+    db.session.commit()
+    flash("Conteo guardado correctamente.", "success")
+    return redirect("/")
+
+
+from sqlalchemy import func
+from zoneinfo import ZoneInfo
+MX_TZ = ZoneInfo("America/Mexico_City")
+from sqlalchemy import func
+from flask import render_template, abort
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+MX_TZ = ZoneInfo("America/Mexico_City")
+
+@app.route("/cash_count_registers", methods=["GET"])
+def cash_count_registers():
+    """
+    Overview page – one row per submission with the summed total.
+    """
+    raw = (
+        db.session.query(
+            ChangeCount.username,
+            ChangeCount.added,
+            func.sum(ChangeCount.denomination).label("total_mxn")
+        )
+        .group_by(ChangeCount.username, ChangeCount.added)
+        .order_by(ChangeCount.added.desc())
+        .all()
+    )
+
+    registers = [
+        {
+            "username": r.username,
+            "added_local": r.added.astimezone(MX_TZ),
+            "added_iso": r.added.isoformat(),   # key for URL
+            "total_mxn": int(r.total_mxn)
+        }
+        for r in raw
+    ]
+
+    return render_template(
+        "cash_count_registers.html",
+        registers=registers
+    )
+
+@app.route("/cash_count_register/<username>/<path:added_iso>", methods=["GET"])
+def cash_count_register_detail(username, added_iso):
+    """
+    Detail page for a single register (submission).
+    URL carries <username> and <added_iso> (the exact timestamp string).
+    """
+    try:
+        added_dt = datetime.fromisoformat(added_iso)
+    except ValueError:
+        abort(404)
+
+    rows = (
+        db.session.query(
+            ChangeCount.denomination,
+            func.count().label("qty")
+        )
+        .filter(
+            ChangeCount.username == username,
+            ChangeCount.added == added_dt
+        )
+        .group_by(ChangeCount.denomination)
+        .order_by(ChangeCount.denomination)
+        .all()
+    )
+
+    if not rows:
+        abort(404)
+
+    detail = [
+        {"denom": r.denomination, "qty": r.qty, "subtotal": r.denomination * r.qty}
+        for r in rows
+    ]
+    total = sum(d["subtotal"] for d in detail)
+
+    return render_template(
+        "cash_count_register_detail.html",
+        username=username,
+        added_local=added_dt.astimezone(MX_TZ),
+        detail=detail,
+        total=total
     )
 
 

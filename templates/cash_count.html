@@ -1,0 +1,116 @@
+{# templates/cash_count.html #}
+{% extends "base.html" %}
+{% block title %}Conteo de caja{% endblock %}
+
+{% block head %}
+  <style>
+    /*──────────── mobile styles ( <576 px ) ────────────*/
+    @media (max-width: 575.98px) {
+      .money-table thead { display: none; }          /* hide bulky header   */
+      .money-table tbody tr {                        /* turn rows into flex */
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: .65rem .25rem;
+        border-bottom: 1px solid #dee2e6;
+      }
+      .money-table td { border: 0; }                 /* drop table borders  */
+      .denom-label  { font-weight: 600; }
+      .count-input  { max-width: 6rem; font-size: 1.05rem; }
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4 fade-page">
+
+  <h2 class="fs-5 text-center mb-4">Conteo de efectivo</h2>
+
+  <form action="{{ url_for('save_cash_count') }}"
+        method="post"
+        class="needs-validation"
+        novalidate>
+
+    <!-- ── cajero ─────────────────────────────────────────── -->
+    <div class="mb-4">
+      <label for="cashier" class="form-label fw-semibold">
+        Nombre del cajero<span class="text-danger">*</span>
+      </label>
+      <input type="text"
+             name="cashier" id="cashier"
+             class="form-control form-control-lg"
+             required
+             placeholder="Escribe tu nombre">
+      <div class="invalid-feedback">El nombre es obligatorio.</div>
+    </div>
+
+    <!-- ── denominaciones ────────────────────────────────── -->
+    <div class="table-responsive mb-4">
+      <table class="table table-sm align-middle money-table">
+        <thead class="table-light">
+          <tr>
+            <th class="text-end">Denominación</th>
+            <th class="text-center">Cantidad</th>
+            <th class="text-end d-none d-md-table-cell">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in (1, 2, 5, 10, 20, 50) %}
+          <tr>
+            <!-- label -->
+            <td class="text-end denom-label pe-3">${{ d }}</td>
+
+            <!-- qty input -->
+            <td class="text-center">
+              <input
+                type="number" inputmode="numeric" pattern="[0-9]*"
+                id="count_{{ d }}"
+                name="counts[{{ d }}]"
+                min="0" step="1" value="0"
+                class="form-control text-center count-input"
+                style="max-width:7rem;"
+                oninput="updateTotal()">
+            </td>
+
+            <!-- desktop-only subtotal placeholder -->
+            <td class="text-end d-none d-md-table-cell"></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ── total ─────────────────────────────────────────── -->
+    <div class="mb-4 fs-4 text-end">
+      <strong>Total:&nbsp;<span id="total-display">$ 0.00</span></strong>
+    </div>
+
+    <!-- ── submit ────────────────────────────────────────── -->
+    <div class="text-center">
+      <button type="submit" class="btn btn-primary btn-lg w-100 w-md-auto">
+        <i class="bi bi-save"></i>&nbsp;Guardar conteo
+      </button>
+    </div>
+  </form>
+</div>
+
+{# ---- SCRIPT AT THE BOTTOM -------------------------------- #}
+<script>
+  function updateTotal () {
+    var values = {1:1, 2:2, 5:5, 10:10, 20:20, 50:50};
+    var pesos  = 0;
+
+    for (var denom in values) {
+      var el  = document.getElementById('count_' + denom);
+      var qty = el && el.value ? parseInt(el.value, 10) : 0;
+      if (isNaN(qty)) qty = 0;
+      pesos += qty * values[denom];
+    }
+
+    document.getElementById('total-display').textContent =
+      pesos.toLocaleString('es-MX',
+        {style:'currency', currency:'MXN', minimumFractionDigits:2});
+  }
+  document.addEventListener('DOMContentLoaded', updateTotal);
+</script>
+{% endblock %}

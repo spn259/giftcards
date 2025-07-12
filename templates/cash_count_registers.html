@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Registros de conteo de caja{% endblock %}
+
+{% block content %}
+<div class="container py-4 fade-page">
+  <h2 class="fs-5 text-center mb-4">Registros de conteo de caja</h2>
+
+  {% if registers %}
+    <div class="table-responsive">
+      <table class="table table-sm table-striped align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>#</th>
+            <th>Cajero</th>
+            <th>Fecha y hora</th>
+            <th class="text-end">Total&nbsp;(MXN)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for reg in registers %}
+          <tr
+            role="button"
+            onclick="window.location='{{ url_for(
+                      'cash_count_register_detail',
+                      username=reg.username,
+                      added_iso=reg.added_iso) }}';"
+            style="cursor:pointer;"
+          >
+            <td>{{ loop.index }}</td>
+            <td>{{ reg.username }}</td>
+            <td>{{ reg.added_local.strftime("%Y-%m-%d %H:%M") }}</td>
+            <td class="text-end">{{ reg.total_mxn | int }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="text-muted fst-italic">Aún no hay conteos guardados.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -177,3 +177,25 @@ class InventoryCounts(Base):
     added = Column(DateTime(timezone=False))
 
 
+from datetime import datetime
+try:
+    # Python 3.9 + (preferred)
+    from zoneinfo import ZoneInfo          # built-in
+    MX_TZ = ZoneInfo("America/Mexico_City")
+except ImportError:
+    # Fallback for older Python versions
+    import pytz
+    MX_TZ = pytz.timezone("America/Mexico_City")
+
+class ChangeCount(Base):
+    __tablename__ = "change_counts"
+
+    id           = Column(Integer, primary_key=True)
+    username     = Column(String, nullable=False)
+    denomination = Column(Integer, nullable=False)
+    added        = Column(DateTime(timezone=True),
+        default=lambda: datetime.now(MX_TZ),   # ← local timestamp
+        nullable=False
+    )
+
+
