@@ -142,8 +142,9 @@ def pull_polo_sales(
         start_dt, end_dt = end_dt, start_dt
 
     start_ms, end_ms = cst_range_to_utc_ms(start_dt, end_dt)
+    print(start_ms, end_ms)
     url = API_URL.format(start=start_ms, end=end_ms)
-    return requests.get(url, headers=HEADERS, timeout=120)
+    return requests.get(url, headers=HEADERS, timeout=1200)
 
 
 # ─── demo ──────────────────────────────────────────────────────
