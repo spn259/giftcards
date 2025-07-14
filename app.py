@@ -800,47 +800,48 @@ def merma_dashboard():
 
     # end_dt  → 00:00 of day AFTER end_date (exclusive upper bound)
     end_dt   = datetime.combine(end_date, datetime.max.time())
+
   
-    resp = pull_polo_sales(start_str, end_str).json()
+    # resp = pull_polo_sales(start_str, end_str).json()
    
-    combo_ids = ['aaf6eb61-bc43-4f5c-bf7e-086778897930', 'a28b0e95-7888-4a8b-9af7-b2019ab3762f']
-    d = dict()
-    for order in resp['orders']:
-        for prod in order['orderItems']:
-            prod_id = prod['cartItem']['productId']
-            if prod_id in combo_ids:
-                mods = pull_mods(prod['orderId'])
-                for item in mods:
-                    prod_id, q = item
-                    if not d.get(prod_id):
-                        d[prod_id] = q
-                    else:
-                        d[prod_id] =  d[prod_id]+q
+    # combo_ids = ['aaf6eb61-bc43-4f5c-bf7e-086778897930', 'a28b0e95-7888-4a8b-9af7-b2019ab3762f']
+    # d = dict()
+    # for order in resp['orders']:
+    #     for prod in order['orderItems']:
+    #         prod_id = prod['cartItem']['productId']
+    #         if prod_id in combo_ids:
+    #             mods = pull_mods(prod['orderId'])
+    #             for item in mods:
+    #                 prod_id, q = item
+    #                 if not d.get(prod_id):
+    #                     d[prod_id] = q
+    #                 else:
+    #                     d[prod_id] =  d[prod_id]+q
                         
-            q = prod['cartItem']['quantity']
-            if not d.get(prod_id):
-                d[prod_id] = q
-            else:
-                d[prod_id] =  d[prod_id]+q
-    all_prods = pd.DataFrame(db.session.query(Menus.product_name, Menus.description, Menus.id, Menus.polo_product_ids).filter(Menus.active == True).all())
-    all_polo = pd.DataFrame(db.session.query(PoloProducts.product_name, PoloProducts.modifier, PoloProducts.description, PoloProducts.id, PoloProducts.polo_id).all())
-    polo_to_uuid = dict(zip(all_polo.id.tolist(), all_polo.polo_id.tolist()))
-    polo_to_adc = dict()
-    for i, r in all_prods.iterrows():
-        for item in r.polo_product_ids:
-            uu = polo_to_uuid.get(item)
-            polo_to_adc[uu] = r['product_name']
-    final_polo_res = {x: 0 for x in all_prods.product_name.tolist()}
-    for k, v in d.items():
-        prod_name = polo_to_adc.get(k)
-        if pd.notnull(prod_name):
-            final_polo_res[prod_name]+= v
+    #         q = prod['cartItem']['quantity']
+    #         if not d.get(prod_id):
+    #             d[prod_id] = q
+    #         else:
+    #             d[prod_id] =  d[prod_id]+q
+    # all_prods = pd.DataFrame(db.session.query(Menus.product_name, Menus.description, Menus.id, Menus.polo_product_ids).filter(Menus.active == True).all())
+    # all_polo = pd.DataFrame(db.session.query(PoloProducts.product_name, PoloProducts.modifier, PoloProducts.description, PoloProducts.id, PoloProducts.polo_id).all())
+    # polo_to_uuid = dict(zip(all_polo.id.tolist(), all_polo.polo_id.tolist()))
+    # polo_to_adc = dict()
+    # for i, r in all_prods.iterrows():
+    #     for item in r.polo_product_ids:
+    #         uu = polo_to_uuid.get(item)
+    #         polo_to_adc[uu] = r['product_name']
+    # final_polo_res = {x: 0 for x in all_prods.product_name.tolist()}
+    # for k, v in d.items():
+    #     prod_name = polo_to_adc.get(k)
+    #     if pd.notnull(prod_name):
+    #         final_polo_res[prod_name]+= v
             
-    l = list()
-    for k, v in final_polo_res.items():
-        l.append((k, v))
+    # l = list()
+    # for k, v in final_polo_res.items():
+    #     l.append((k, v))
         
-    polo_df = pd.DataFrame(l, columns=['product_name', 'n_items'])
+    # polo_df = pd.DataFrame(l, columns=['product_name', 'n_items'])
 
 
 
@@ -864,10 +865,7 @@ def merma_dashboard():
         .filter(MermaCounts.added.between(start_dt, end_dt))
         .all()
     )
-    print(start_dt, end_dt)
-
-    print(merma_df)
-
+    
 
     # ---------- 1.  Deduplicate MERMA by product + day ----------
     if not merma_df.empty:
@@ -890,7 +888,7 @@ def merma_dashboard():
 
     
     data = list()
-    for i, r in polo_df.iterrows():
+    for i, r in merma_df.iterrows():
         if len(merma_df) > 0:
             tmp_merma= merma_df[merma_df.product_name == r.product_name]
             if len(tmp_merma) > 0:
@@ -913,7 +911,7 @@ def merma_dashboard():
         data.append({'product_name':r.product_name, 
                      'merma_count': n_merma, 
                      'production_count': n_prod, 
-                     'sales_count': r.n_items}
+                     'sales_count': 0}
                     )
        
         
@@ -921,27 +919,35 @@ def merma_dashboard():
 
     return render_template("merma_dashboard.html", data=data)
 
+from datetime import datetime, time
+import calendar, pytz
+from flask import request, render_template
+
 @app.route('/expenses_dashboard')
 def expenses_dashboard():
-    # 1) Set up pytz CST zone and “now”
-    from datetime import datetime, time
-    import pytz
-    cst = pytz.timezone("America/Mexico_City")
-    now_cst = datetime.now(cst)
+    # ── 1) Zona UTC y fecha/hora “ahora” ─────────────────────────────
+    utc = pytz.utc
+    now_utc = datetime.utcnow().replace(tzinfo=utc)
 
-    # 2) Compute defaults in CST
-    default_start = now_cst.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    default_end   = now_cst.replace(hour=23, minute=59, second=59, microsecond=999999)
+    # ── 2) Límites por defecto: 1 de mes-actual 00:00 → último día 23:59 ─
+    first_of_month = now_utc.replace(day=1, hour=0, minute=0,
+                                     second=0, microsecond=0)
+    _, days_in_month = calendar.monthrange(now_utc.year, now_utc.month)
+    last_of_month = now_utc.replace(day=days_in_month, hour=23, minute=59,
+                                    second=59, microsecond=999999)
 
-    # 3) Read query‐params
+    default_start = first_of_month
+    default_end   = last_of_month
+
+    # ── 3) Leer query-params (YYYY-MM-DD) ────────────────────────────
     start_str = request.args.get('start_date')
     end_str   = request.args.get('end_date')
 
-    # 4) Parse or fall back
+    # ── 4) Parsear fechas o caer en los defaults ─────────────────────
     if start_str:
         try:
             dt = datetime.strptime(start_str, "%Y-%m-%d")
-            start_dt = cst.localize(datetime.combine(dt.date(), time.min))
+            start_dt = utc.localize(datetime.combine(dt.date(), time.min))
         except ValueError:
             start_dt = default_start
     else:
@@ -950,13 +956,13 @@ def expenses_dashboard():
     if end_str:
         try:
             dt = datetime.strptime(end_str, "%Y-%m-%d")
-            end_dt = cst.localize(datetime.combine(dt.date(), time.max))
+            end_dt = utc.localize(datetime.combine(dt.date(), time.max))
         except ValueError:
             end_dt = default_end
     else:
         end_dt = default_end
 
-    # 5) Query between those datetimes
+    # ── 5) Consultar la BD ───────────────────────────────────────────
     expenses = (
         db.session.query(Expenses)
         .filter(
@@ -967,10 +973,9 @@ def expenses_dashboard():
         .all()
     )
 
-    # 6) Compute total
+    # ── 6) Total y render ────────────────────────────────────────────
     total_amount = sum(e.amount for e in expenses)
 
-    # 7) Render, passing back the ISO‐dates for the form
     return render_template(
         'expense_dashboard.html',
         data=expenses,
@@ -1458,7 +1463,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 MX_TZ = ZoneInfo("America/Mexico_City")
-
+@login_required
+@username_required    
 @app.route("/cash_count_registers", methods=["GET"])
 def cash_count_registers():
     """
@@ -1490,6 +1496,8 @@ def cash_count_registers():
         registers=registers
     )
 
+@login_required
+@username_required    
 @app.route("/cash_count_register/<username>/<path:added_iso>", methods=["GET"])
 def cash_count_register_detail(username, added_iso):
     """
