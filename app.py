@@ -886,9 +886,9 @@ def merma_dashboard():
                 [["product_name", "n_prod", "date"]]
         )
 
-    
+    prods = prod_df.drop_duplicates(subset=['product_name']).reset_index(drop=True)
     data = list()
-    for i, r in merma_df.iterrows():
+    for i, r in prods.iterrows():
         if len(merma_df) > 0:
             tmp_merma= merma_df[merma_df.product_name == r.product_name]
             if len(tmp_merma) > 0:
