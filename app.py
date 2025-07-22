@@ -1669,7 +1669,10 @@ def send_push(user, payload: dict):
         # handle expired subscriptions, remove from DB, etc.
         print("WebPush error:", ex)
 
-
+@app.route('/sw.js')
+def service_worker():
+    # Flask will look in the 'static/' folder automatically
+    return app.send_static_file('sw.js')
 
 # Run app locally
 if local:
