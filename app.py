@@ -1478,10 +1478,18 @@ def save_push_subscription():
     db.session.commit()
     return ("", 204)
 
+from flask import send_from_directory, make_response
+
 @app.route("/sw.js")
 def service_worker():
-    # Flask will look in the 'static/' folder automatically
-    return app.send_static_file("sw.js")
+    resp = make_response(
+        send_from_directory("static", "sw.js", mimetype="text/javascript")
+    )
+    # Disable caching
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"]        = "no-cache"
+    resp.headers["Expires"]       = "0"
+    return resp
 
 # routes.py  – replace the old update_insumo_status function
 from flask import request, redirect, flash, url_for, current_app, abort
