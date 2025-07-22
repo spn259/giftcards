@@ -17,8 +17,8 @@
       <a href="{{ url_for('scan') }}" class="text-decoration-none">
         <div class="card shadow-sm h-100">
           <div class="card-body text-center">
-            <h5 class="card-title mb-2">Escanear Tarjeta</h5>
-            <p class="card-text small text-muted">Registra gastos y abonos con código QR</p>
+            <h5 class="card-title mb-2">📷 Escanear Tarjeta</h5>
+            <p class="card-text small text-muted">Registra gastos y abonos con código&nbsp;QR</p>
           </div>
         </div>
       </a>
@@ -29,7 +29,7 @@
       <a href="{{ url_for('enter_production_counts') }}" class="text-decoration-none">
         <div class="card shadow-sm h-100">
           <div class="card-body text-center">
-            <h5 class="card-title mb-2">Ingresar Producción</h5>
+            <h5 class="card-title mb-2">🏭 Ingresar Producción</h5>
             <p class="card-text small text-muted">Captura los conteos de producción del día</p>
           </div>
         </div>
@@ -41,7 +41,7 @@
       <a href="{{ url_for('enter_merma_counts') }}" class="text-decoration-none">
         <div class="card shadow-sm h-100">
           <div class="card-body text-center">
-            <h5 class="card-title mb-2">Ingresar Merma</h5>
+            <h5 class="card-title mb-2">♻️ Ingresar Merma</h5>
             <p class="card-text small text-muted">Registra la merma diaria</p>
           </div>
         </div>
@@ -53,7 +53,7 @@
       <a href="{{ url_for('merma_dashboard') }}" class="text-decoration-none">
         <div class="card shadow-sm h-100">
           <div class="card-body text-center">
-            <h5 class="card-title mb-2">Dashboard Producción &amp; Merma</h5>
+            <h5 class="card-title mb-2">📊 Dashboard Producción &amp; Merma</h5>
             <p class="card-text small text-muted">Visualiza producción, ventas y merma</p>
           </div>
         </div>
@@ -65,8 +65,8 @@
       <a href="{{ url_for('expenses_dashboard') }}" class="text-decoration-none">
         <div class="card shadow-sm h-100">
           <div class="card-body text-center">
-            <h5 class="card-title mb-2">Gastos Tabla</h5>
-            <p class="card-text small text-muted">Desglose de Gastos</p>
+            <h5 class="card-title mb-2">💸 Gastos Tabla</h5>
+            <p class="card-text small text-muted">Desglose de gastos</p>
           </div>
         </div>
       </a>
@@ -77,7 +77,7 @@
       <a href="{{ url_for('admin_log_expense') }}" class="text-decoration-none">
         <div class="card shadow-sm h-100">
           <div class="card-body text-center">
-            <h5 class="card-title mb-2">Registrar Gasto</h5>
+            <h5 class="card-title mb-2">📝 Registrar Gasto</h5>
             <p class="card-text small text-muted">Añade un gasto</p>
           </div>
         </div>
@@ -89,7 +89,7 @@
       <a href="{{ url_for('upload_menu') }}" class="text-decoration-none">
         <div class="card shadow-sm h-100">
           <div class="card-body text-center">
-            <h5 class="card-title mb-2">Subir Menú</h5>
+            <h5 class="card-title mb-2">🍽️ Subir Menú</h5>
             <p class="card-text small text-muted">Digitaliza y publica un nuevo menú</p>
           </div>
         </div>
@@ -101,38 +101,48 @@
       <a href="{{ url_for('match_polo_products') }}" class="text-decoration-none">
         <div class="card shadow-sm h-100">
           <div class="card-body text-center">
-            <h5 class="card-title mb-2">Match Productos Polo</h5>
-            <p class="card-text small text-muted">Asocia productos del menú con el sistema POS</p>
+            <h5 class="card-title mb-2">🔗 Match Productos&nbsp;Polo</h5>
+            <p class="card-text small text-muted">Asocia productos del menú con el sistema&nbsp;POS</p>
           </div>
         </div>
       </a>
     </div>
 
-    <!-- Inventory Dashboard (NEW) -->
+    <!-- Inventory Dashboard -->
     <div class="col">
       <a href="{{ url_for('inventory_dashboard') }}" class="text-decoration-none">
         <div class="card shadow-sm h-100">
           <div class="card-body text-center">
-            <h5 class="card-title mb-2">Inventario</h5>
+            <h5 class="card-title mb-2">📦 Inventario</h5>
             <p class="card-text small text-muted">Ver y actualizar existencias</p>
           </div>
         </div>
       </a>
     </div>
 
-     <!-- Inventory Dashboard (NEW) -->
+    <!-- Cash Counts -->
     <div class="col">
       <a href="{{ url_for('cash_count_registers') }}" class="text-decoration-none">
         <div class="card shadow-sm h-100">
           <div class="card-body text-center">
-            <h5 class="card-title mb-2">Conteos de Cambio</h5>
+            <h5 class="card-title mb-2">💰 Conteos de Cambio</h5>
             <p class="card-text small text-muted">Ver conteos de cambio</p>
           </div>
         </div>
       </a>
     </div>
 
-
+    <!-- Admin Insumos (NEW) -->
+    <div class="col">
+      <a href="/admin/insumos" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">📋 Solicitudes&nbsp;Insumos</h5>
+            <p class="card-text small text-muted">Crear y administrar solicitudes de insumos</p>
+          </div>
+        </div>
+      </a>
+    </div>
 
   </div>
 </div>
