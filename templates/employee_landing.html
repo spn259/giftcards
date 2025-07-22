@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block head %}
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+{% endblock %}
+
+{% block title %}Panel Empleados • ADC{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 py-4">
+  <h2 class="text-center mb-4 fs-5">Panel de Empleados</h2>
+
+  <div class="row row-cols-1 row-cols-md-2 g-4">
+
+    <!-- Cash Count -->
+    <div class="col">
+      <a href="{{ url_for('cash_count') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">💵 Conteo de Caja</h5>
+            <p class="card-text small text-muted">Registra el efectivo inicial o cierre</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Production Counts -->
+    <div class="col">
+      <a href="{{ url_for('enter_production_counts') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">🍩 Producción</h5>
+            <p class="card-text small text-muted">Ingresa los conteos de producción</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Merma Counts -->
+    <div class="col">
+      <a href="{{ url_for('enter_merma_counts') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">🗑️ Merma</h5>
+            <p class="card-text small text-muted">Registra la merma del día</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Insumo Request -->
+    <div class="col">
+      <a href="{{ url_for('insumo_form') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">📦 Solicitar Insumo</h5>
+            <p class="card-text small text-muted">Pide materiales y suministros</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

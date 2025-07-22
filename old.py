@@ -304,3 +304,205 @@ def update_inventory_item(item_id):
         name=item.product_name, measure=item.measure, details=item.details,
         added=item.added.strftime("%d/%m/%Y %H:%M"), user=item.username
     )
+
+
+@app.route("/match_polo_products", methods=["GET", "POST"])
+def match_polo_products():
+    all_prods = pd.DataFrame(
+        db.session.query(Menus.product_name, Menus.description, Menus.id)
+        .filter(Menus.active == True)
+        .all()
+    )
+    all_polo = pd.DataFrame(
+        db.session.query(
+            PoloProducts.product_name,
+            PoloProducts.modifier,
+            PoloProducts.description,
+            PoloProducts.id,
+        ).all()
+    )
+
+    polo_d = list()
+    for i, r in all_polo.iterrows():
+        polo_d.append(
+            {
+                "product_name": r.product_name,
+                "modifier": r.modifier,
+                "description": r.description,
+                "id": r["id"],
+            }
+        )
+
+    prod_d = list()
+    for i, r in all_prods.iterrows():
+        prod_d.append(
+            {
+                "product_name": r.product_name,
+                "description": r.description,
+                "id": r["id"],
+            }
+        )
+
+    prompt = """
+    For each product in the list Menu Items, try to match one or more products from the list Polo Products, 
+    output your matches as JSON list:
+
+    for example
+    "GLASEADA ORIGINAL": [{{name: name, id: id, modifier: modifier}}, {{name: name, id: id, modifier: modifier}}]
+
+    Most will have two matches, one non-modifier and one modifier, return the 5 best matches.
+
+    In the matches, include the polo id, and whether it is a modifier or not and name as keys
+
+    Polo products: {}
+    Menu products: {}
+
+
+    """
+
+    system_prompt = """Out put your answer as json
+    product: [{{"product_name": name}}, {{"product_id": prod_id}}]"""
+
+    this_prompt = prompt.format(polo_d, prod_d)
+    pull = True
+    if pull:
+
+        MODEL = "gpt-4.1-2025-04-14"
+        from openai import OpenAI
+
+        client = OpenAI(api_key=openai_token)
+        kw = {"response_format": {"type": "json_object"}}
+
+        # Call the LLMclient.chat.completions.create
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": this_prompt},
+            ],
+            **kw,
+        )
+
+        resp = json.loads(response.model_dump_json())
+        content = resp["choices"][0]["message"]["content"]
+        res = json.loads(content)
+    else:
+        res = {
+            "GLASEADA ORIGINAL": [
+                {"name": "Dona Glaseada Original", "id": 209, "modifier": False},
+                {"name": "Dona Glaseada Original", "id": 234, "modifier": True},
+            ],
+            "MAPLE TOCINO": [
+                {"name": "Dona de Maple Tocino", "id": 176, "modifier": False},
+                {"name": "Maple Tocino", "id": 242, "modifier": True},
+            ],
+            "CHOCOLATE": [
+                {"name": "Dona de Chocolate", "id": 156, "modifier": False},
+                {"name": "Dona de Chocolate", "id": 240, "modifier": True},
+            ],
+            "BLUEBERRY": [
+                {"name": "Dona con Glaseado de Blueberry", "id": 52, "modifier": False},
+                {"name": "Dona con Glaseado de Blueberry", "id": 239, "modifier": True},
+            ],
+            "NUTELLA": [
+                {"name": "Dona Rellena Nutella", "id": 44, "modifier": False},
+                {"name": "Dona Rellena Nutella", "id": 237, "modifier": True},
+            ],
+            "ZARZAMORA": [
+                {"name": "Dona Rellena Zarzamora", "id": 152, "modifier": False},
+                {"name": "Dona Rellena Zarzamora", "id": 227, "modifier": True},
+            ],
+            "MATCHA": [
+                {"name": "Dona Rellena de Matcha", "id": 31, "modifier": False},
+                {"name": "Dona Rellena de Matcha", "id": 235, "modifier": True},
+            ],
+            "CANELA TWIST": [
+                {"name": "Canela Twist", "id": 162, "modifier": False},
+                {"name": "Canela Twist", "id": 233, "modifier": True},
+            ],
+            "OLD FASHION ZANAHORIA": [
+                {"name": "Old Fashion Zanahoria", "id": 143, "modifier": False},
+                {"name": "Old Fashion Zanahoria", "id": 230, "modifier": True},
+            ],
+            "OLD FASHION CHOCOLATE": [
+                {"name": "Dona Old Fashion Chocolate", "id": 105, "modifier": False},
+                {"name": "Dona Old Fashion Chocolate", "id": 228, "modifier": True},
+            ],
+            "APPLE FRITTER": [
+                {"name": "Apple Fritter", "id": 57, "modifier": False},
+                {"name": "Apple Fritter", "id": 238, "modifier": True},
+            ],
+            "LONGJOHN MAPLE": [
+                {
+                    "name": "Maple Long John (Rellena de Crema)",
+                    "id": 64,
+                    "modifier": False,
+                },
+                {
+                    "name": "Maple Long John (Rellena de Crema)",
+                    "id": 229,
+                    "modifier": True,
+                },
+            ],
+            "LONGJOHN CHOCOLATE": [
+                {
+                    "name": "Chocolate Long John (Rellena de Crema)",
+                    "id": 45,
+                    "modifier": False,
+                },
+                {
+                    "name": "Chocolate Long John (Rellena de Crema)",
+                    "id": 236,
+                    "modifier": True,
+                },
+            ],
+            "PIZZA PUFF": [
+                {"name": "Pizza Puff", "id": 231, "modifier": True},
+                {"name": "Pizza Dona", "id": 83, "modifier": False},
+            ],
+            "BEARCLAW MANZANA": [
+                {"name": "Bear Claw Manzana", "id": 21, "modifier": False},
+                {"name": "Bearclaw Manzana", "id": 241, "modifier": True},
+            ],
+        }
+
+    return render_template("match_polo_products.html", options=res)
+
+
+BRACKET_RE = re.compile(r"^modifiers\[(.+?)\]\[\]$")
+
+
+@app.route("/save_modifiers", methods=["POST"])
+def save_modifiers():
+    """
+    Build a dict:
+        {
+            "GLASEADA ORIGINAL": [209, 234],
+            "CHOCOLATE":        [240],  # etc.
+        }
+    from the check-box form.
+    """
+    selected = {}  # product_name -> list[int]
+
+    # request.form is a MultiDict; iterate over keys
+    for field, values in request.form.lists():
+        m = BRACKET_RE.match(field)
+        if not m:
+            continue  # skip unrelated fields (CSRF token…)
+
+        product_name = m.group(1)  # text inside the [ ... ]
+        # values is already a list of strings; convert to int
+        selected[product_name] = [int(v) for v in values if v.strip()]
+
+    # ---- do whatever you need with `selected` dict ----
+    # e.g. save to DB, log, etc.
+    print("User picked:", selected)
+
+    for k, v in selected.items():
+        db.session.query(Menus).filter(Menus.product_name == k.strip()).filter(
+            Menus.active == True
+        ).update({"polo_product_ids": v})
+    db.session.commit()
+
+    flash("Modificadores guardados.", "success")
+    return "Products received"

@@ -31,6 +31,11 @@ db = PostgresDB(
         sslmode=sslmode)
 
 
-new_user = User(username='romina', password=generate_password_hash('andre546'))
+new_user = User(username='adriana', password=generate_password_hash('adriana546'))
 db.session.add(new_user)
 db.session.commit()
+
+new_user = User(username='andre', password=generate_password_hash('andre546'))
+db.session.add(new_user)
+db.session.commit()
+
