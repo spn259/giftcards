@@ -6,35 +6,29 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   console.log('SW activated');
 });
-
-// Handle incoming push messages
 self.addEventListener('push', event => {
-  console.log('Push received:', event);
-  let data = { title: 'Nuevo insumo', body: 'Tienes una nueva asignación' };
-
-  // Try to parse JSON payload if provided
+  let payload = {};
   if (event.data) {
-    try { data = event.data.json(); }
-    catch(e) { console.warn('Push payload not JSON'); }
+    try {
+      payload = event.data.json();        // works if object
+    } catch (err) {
+      console.warn('Push payload not JSON – using text');
+      payload = { body: event.data.text() };   // string fallback
+    }
   }
 
+  const title = payload.title || '🔔 Notificación';
   const options = {
-    body:       data.body,
-    icon:       '/static/icons-192.png',
-    badge:      '/static/icons-192.png',
-    data:       data,          // accessible in notificationclick
-    vibrate:    [100, 50, 100] // mobile vibration pattern
+    body:  payload.body || '',
+    icon:  '/static/logo-192.png',
+    data:  { url: payload.url || '/' }    // click-through
   };
 
-  event.waitUntil(
-    self.registration.showNotification(data.title, options)
-  );
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
-// Optional: handle clicks on notifications
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  event.waitUntil(
-    clients.openWindow('/admin/insumos')  // focus or open your app
-  );
+  const url = event.notification.data.url || '/';
+  event.waitUntil(clients.openWindow(url));
 });
