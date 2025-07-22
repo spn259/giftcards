@@ -53,7 +53,7 @@ if ('serviceWorker' in navigator && 'PushManager' in window) {
       // 3. Subscribe to Push
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array('<YOUR-VAPID-PUBLIC-KEY>')
+        applicationServerKey: urlBase64ToUint8Array('BOmbCHICvQBlEmmQswMLe8Umlz4kmqySKY1vBZl63XxYQt2-qbz1WrrIP3IZA9fTGDDnAFqoJO_BW2CWgslwgYU')
       });
       console.log('Push subscribed:', subscription);
 
