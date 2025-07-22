@@ -10,6 +10,7 @@ self.addEventListener('push', event => {
   let payload = {};
   if (event.data) {
     try {
+      console.log('RAW push string →', event.data.text());
       payload = event.data.json();        // works if object
     } catch (err) {
       console.warn('Push payload not JSON – using text');

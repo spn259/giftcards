@@ -39,7 +39,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 MX_TZ = ZoneInfo("America/Mexico_City")
 
-local =False
+local = False
 if local:
     from dotenv import load_dotenv
     from pathlib import Path
@@ -1364,14 +1364,16 @@ push_pool = ThreadPoolExecutor(max_workers=4)
 
 def _send_webpush(subscription: dict, payload: dict):
     """Run inside executor → non-blocking for the request thread."""
+    body = json.dumps(payload, ensure_ascii=False)
     try:
         webpush(
             subscription_info = subscription,
-            data              = json.dumps(payload),
+            data              = body,
             vapid_private_key = VAPID_PRIVATE,
             vapid_claims      = VAPID_CLAIMS,
             ttl               = 60,
         )
+        logging.warning(body)
     except WebPushException as ex:
         # Log and swallow; avoid crashing the worker thread
         app.logger.warning("WebPush error for %s: %s", subscription.get("endpoint"), ex)
