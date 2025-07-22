@@ -2,7 +2,7 @@
 from collections import OrderedDict
 
 from sqlalchemy import (
-    Column, Integer, String, Text, Boolean, ForeignKey,BigInteger, DateTime, func, text, ARRAY, Float, Index, types,
+    Column, Integer, String, Text, Boolean, Enum, ForeignKey,BigInteger, DateTime, func, text, ARRAY, Float, Index, types,
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID, BIGINT, TEXT, NUMERIC
@@ -15,6 +15,8 @@ from sqlalchemy.schema import Table
 from sqlalchemy.sql import functions
 from sqlalchemy.sql.elements import ColumnClause
 from sqlalchemy.sql.selectable import FromClause, Alias, Lateral
+from datetime import datetime
+import pytz
 
 Base = declarative_base()
 
@@ -192,30 +194,47 @@ class ChangeCount(Base):
         nullable=False
     )
 
-from datetime import datetime
-from sqlalchemy import (
-    Column, BigInteger, String, Float, Enum, Text, DateTime
-)
+
+MX_TZ = pytz.timezone("America/Mexico_City")
+
 class InsumoRequest(Base):
-    __tablename__   = "insumo_requests"
-    __table_args__  = {"schema": "public", "extend_existing": True}
+    __tablename__  = "insumo_requests"
+    __table_args__ = {"schema": "public", "extend_existing": True}
 
     id          = Column(BigInteger, primary_key=True)
     employee    = Column(String(50),  nullable=False)
     name        = Column(String(80),  nullable=False)
     measure     = Column(String(10),  nullable=False)          # unidades, kg, g, etc.
     quantity    = Column(Float,       nullable=False)
+
     urgency     = Column(
         Enum("baja", "media", "alta", name="urgency_level"),
         nullable=False
     )
-    notes       = Column(Text)
-    status      = Column(
-        Enum("pendiente", "asignado", "cerrado", name="insumo_status"),
-        default="pendiente",
-        nullable=False
-    )
-    assigned_to = Column(String(50))
-    created_at  = Column(DateTime(timezone=False), default=datetime.utcnow)
 
+    notes       = Column(Text)
+
+    status      = Column(
+        Enum(
+            "pendiente",
+            "asignado",
+            "en progreso",
+            "completado",
+            "cancelado",
+            name="insumo_status",
+        ),
+        default="pendiente",
+        nullable=False,
+    )
+
+    assigned_to = Column(String(50))
+
+    # ──────────────── TIMEZONE-AWARE «added» ──────────────────
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(MX_TZ),                       # Python side
+        server_default=text("timezone('America/Mexico_City', now())"),  # DB side
+        nullable=False,
+    )
+    # ───────────────────────────────────────────────────────────
 

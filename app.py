@@ -1353,21 +1353,68 @@ def insumo_form():
     return render_template("insumo_request.html", employees=employees)
 
 
-@app.route("/insumos/request", methods=["POST"])
+# routes.py  – imports near the top of the file
+from concurrent.futures import ThreadPoolExecutor
+from app import app, db
+
+
+
+# one shared pool (4 workers is plenty for a few pushes per request)
+push_pool = ThreadPoolExecutor(max_workers=4)
+
+def _send_webpush(subscription: dict, payload: dict):
+    """Run inside executor → non-blocking for the request thread."""
+    try:
+        webpush(
+            subscription_info = subscription,
+            data              = json.dumps(payload),
+            vapid_private_key = VAPID_PRIVATE,
+            vapid_claims      = VAPID_CLAIMS,
+            ttl               = 60,
+        )
+    except WebPushException as ex:
+        # Log and swallow; avoid crashing the worker thread
+        app.logger.warning("WebPush error for %s: %s", subscription.get("endpoint"), ex)
+
+
+# ─────────── Route ───────────────────────────────────────
+@app.post("/insumos/request")
 def create_insumo_request():
+    """Create a new InsumoRequest and kick off web-pushes asynchronously."""
     data = request.get_json(force=True)
+
+    # 1.  Create + commit the request
     req = InsumoRequest(
-        employee=data["employee"],
-        name=data["insumo"],
-        measure=data["measure"],
-        quantity=float(data["quantity"]),
-        urgency=data["urgency"],
-        notes=data.get("notes"),
+        employee = data["employee"],
+        name     = data["insumo"],
+        measure  = data["measure"],
+        quantity = float(data["quantity"]),
+        urgency  = data["urgency"],
+        notes    = data.get("notes"),
     )
     db.session.add(req)
     db.session.commit()
 
-    return ("", 204) 
+    # 2.  Prepare  payload once
+    payload = {
+        "title":   "Nueva solicitud de insumo",
+        "body":    f"{req.employee} pidió {req.quantity} {req.measure} de {req.name}",
+        "urgency": req.urgency,
+        "id":      req.id,
+    }
+
+    # 3.  Enqueue pushes (non-blocking)
+    recipients = ["steven", "andre", "adriana", "romina"]
+    for username in recipients:
+        user = db.session.execute(
+            db.select(User).filter_by(username=username)
+        ).scalar_one_or_none()
+
+        if user and user.push_subscription:
+            push_pool.submit(_send_webpush, user.push_subscription, payload)
+
+    # 4.  Immediate 204 → front-end shows success without delay
+    return ("", 204)
 
 @app.route("/admin/insumos")
 @login_required
@@ -1433,6 +1480,48 @@ def save_push_subscription():
 def service_worker():
     # Flask will look in the 'static/' folder automatically
     return app.send_static_file("sw.js")
+
+# routes.py  – replace the old update_insumo_status function
+from flask import request, redirect, flash, url_for, current_app, abort
+from flask_login import login_required
+from sqlalchemy import select
+
+from app import db
+from models import InsumoRequest          # adjust path as needed
+
+
+@app.route("/admin/insumos/<int:req_id>/status", methods=["POST"])
+@login_required
+def update_insumo_status(req_id: int):
+    """
+    Update the status of an InsumoRequest.
+    Works with vanilla SQLAlchemy (no Model.query helper).
+    """
+    # ── 1. fetch or 404 ──────────────────────────────────────────
+    stmt = select(InsumoRequest).where(InsumoRequest.id == req_id)
+    req  = db.session.scalar(stmt)        # returns None if not found
+    if req is None:
+        abort(404)
+
+    # ── 2. validate new status ───────────────────────────────────
+    new_status = request.form.get("status", "").strip().lower()
+    allowed = current_app.config.get(
+        "INSUMO_STATUSES",
+        ["pendiente", "en progreso", "completado", "cancelado"]
+    )
+    if new_status not in allowed:
+        flash("Estado no válido.", "danger")
+        return redirect(request.referrer or url_for("insumos_admin"))
+
+    # ── 3. apply + commit ────────────────────────────────────────
+    if new_status != req.status:
+        req.status = new_status
+        db.session.commit()
+        flash(f"Estado actualizado a «{new_status}».", "success")
+    else:
+        flash("El estado ya estaba actualizado.", "info")
+
+    return redirect(request.referrer or url_for("insumos_admin"))
 
 if local:
     app.run(debug=True, host="0.0.0.0", port=8080, threaded=True, use_reloader=True)
