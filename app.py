@@ -39,7 +39,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 MX_TZ = ZoneInfo("America/Mexico_City")
 
-local = False
+local =False
 if local:
     from dotenv import load_dotenv
     from pathlib import Path
@@ -1347,7 +1347,7 @@ def cash_count_register_detail(username, added_iso):
 
 
 # routes.py ― employee view
-@app.route("/insumos/request", methods=["GET"])
+@app.route("/insumos/request_form", methods=["GET"])
 def insumo_form():
     employees = ["Karina", "Andy", "Paco", "David", "Fanny", "Tony", "Otro"]
     return render_template("insumo_request.html", employees=employees)

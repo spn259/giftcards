@@ -35,55 +35,81 @@
         }
     </style>
 </head>
+<!-- ── NOTIFICATION BUTTON ───────────────────────────────────────────── -->
+<button id="btnAllowNotifications"
+        class="btn btn-warning shadow position-fixed d-none"
+        style="bottom:1rem;right:1rem;z-index:1080;">
+  🔔 Activar Notificaciones
+</button>
+<!-- ──────────────────────────────────────────────────────────────────── -->
+
 <script>
-if ('serviceWorker' in navigator && 'PushManager' in window) {
-  window.addEventListener('load', async () => {
-    try {
-      // 1. Register the SW
-      const registration = await navigator.serviceWorker.register('/sw.js');
-      console.log('SW registered:', registration);
+/* ---------- CONSTANTS & HELPERS ---------- */
+const VAPID_PUBLIC = 'BOmbCHICvQBlEmmQswMLe8Umlz4kmqySKY1vBZl63XxYQt2-qbz1WrrIP3IZA9fTGDDnAFqoJO_BW2CWgslwgYU';
 
-      // 2. Ask for Notification permission
-      const status = await Notification.requestPermission();
-      if (status !== 'granted') {
-        console.warn('Notifications not granted');
-        return;
-      }
+function urlBase64ToUint8Array(base64) {
+  const pad = '='.repeat((4 - base64.length % 4) % 4);
+  const b64 = (base64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(b64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
 
-      // 3. Subscribe to Push
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array('BOmbCHICvQBlEmmQswMLe8Umlz4kmqySKY1vBZl63XxYQt2-qbz1WrrIP3IZA9fTGDDnAFqoJO_BW2CWgslwgYU')
-      });
-      console.log('Push subscribed:', subscription);
-
-      // 4. Send subscription to your server
-      await fetch('/save_push_subscription', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(subscription)
-      });
-    } catch (err) {
-      console.error('SW / Push error:', err);
-    }
+async function subscribeForPush(registration) {
+  const sub = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC)
+  });
+  await fetch('/save_push_subscription', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(sub)
   });
 }
 
-// Utility to convert VAPID key
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const b64       = (base64String + padding)
-                    .replace(/\-/g, '+')
-                    .replace(/_/g, '/');
-  const rawData   = atob(b64);
-  return Uint8Array.from(
-    [...rawData].map(char => char.charCodeAt(0))
-  );
-}
+/* ---------- MAIN FLOW ---------- */
+window.addEventListener('load', async () => {
+  const btn = document.getElementById('btnAllowNotifications');
+
+  // Guard: browser supports SW + Push
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+
+  // Always register SW (required before subscribing)
+  const registration = await navigator.serviceWorker.register('/sw.js');
+
+  // If permission already granted, subscribe silently and leave button hidden
+  if (Notification.permission === 'granted') {
+    subscribeForPush(registration);
+    return;
+  }
+
+  // If denied, there's nothing we can do
+  if (Notification.permission === 'denied') return;
+
+  // Show the button (state === 'default')
+  btn.classList.remove('d-none');
+
+  btn.addEventListener('click', async () => {
+    try {
+      const status = await Notification.requestPermission();
+      if (status === 'granted') {
+        await subscribeForPush(registration);
+        btn.classList.add('d-none');  // hide after success
+      } else {
+        // Optional: give gentle feedback if they hit “Block”
+        alert('Para recibir avisos en tiempo real, permite las notificaciones en tu navegador.');
+      }
+    } catch (err) {
+      console.error('Push setup error:', err);
+    }
+  });
+});
 </script>
+
 
 <body>
     <!-- navbar-dark provides a white toggler icon -->
+     <!-- ── NOTIFICATION BUTTON ───────────────────────────────────────────── -->
+
     <nav class="navbar navbar-expand-lg navbar-dark navbar-custom">
         <div class="container-fluid">
 
@@ -104,6 +130,7 @@ function urlBase64ToUint8Array(base64String) {
                     aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
+          
 
             <!-- Collapsible links; visible everywhere, collapsible on mobile -->
             <div class="collapse navbar-collapse" id="mainNav">
@@ -117,12 +144,29 @@ function urlBase64ToUint8Array(base64String) {
                     <li class="nav-item">
                         <a class="nav-link" href="/logout">Logout</a>
                     </li>
+                    <li>
+                        <button id="btnAllowNotifications"
+        class="btn btn-warning shadow position-fixed d-none"
+        style="bottom:1rem;right:1rem;z-index:1080;">
+  🔔 Activar Notificaciones
+    </button>
+                    </li>
                 </ul>
             </div>
             {% endif %}
 
         </div>
     </nav>
+    <!-- Push-opt-in banner (hidden by default) -->
+<div id="pushPrompt" class="alert alert-warning alert-dismissible fade d-none"
+     role="alert" style="position:fixed;bottom:1rem;left:1rem;right:1rem;z-index:1080;">
+  🔔 ¿Quieres recibir notificaciones de nuevos pedidos?
+  <button id="btnEnablePush" class="btn btn-sm btn-primary ms-2">Sí, activar</button>
+  <button type="button" class="btn-close" data-bs-dismiss="alert"
+          aria-label="Close"></button>
+</div>
+
+
 
     {% block content %}{% endblock %}
 
