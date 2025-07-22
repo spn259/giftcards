@@ -16,7 +16,7 @@ from flask_login import LoginManager, UserMixin
 
 from models import Expenses     
 from db import PostgresDB
-from models import Cards, ChangeCount, Transactions, WorkerPin, CustomerPin, PoloProducts, Menus, ProductionCounts, MermaCounts, InventoryProducts, InventoryCounts
+from models import Cards, ChangeCount, InsumoRequest, Transactions, WorkerPin, CustomerPin, PoloProducts, Menus, ProductionCounts, MermaCounts, InventoryProducts, InventoryCounts
 import os
 import uuid
 from datetime import datetime, timezone
@@ -56,6 +56,13 @@ spaces_key_id = os.environ['spaces_key_id']
 spaces_bucket_endpoint = os.environ['spaces_bucket_endpoint']
 spaces_bucket_name = os.environ['spaces_bucket_name']
 openai_token = os.environ['openai_token']
+
+if local:
+    from my_secrets import env_vars
+    VAPID_PUBLIC  = env_vars.get('VAPID_PUBLIC_KEY')
+    VAPID_PRIVATE = env_vars.get('VAPID_PRIVATE_KEY')
+
+VAPID_CLAIMS  = { "sub": "mailto:steven@austindonutcompany.com.mx" }
 
 
 
@@ -126,13 +133,15 @@ sched = BackgroundScheduler(daemon=True)
 fetch_lock = Lock()       # keeps two jobs from overlapping
 
 
-# User Model linked to the 'users' table in the database
-class User(UserMixin, db.Model):
-    __tablename__ = 'users'
+from sqlalchemy.dialects.postgresql import JSONB   # add this
 
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(255), unique=True, nullable=False)
-    password = db.Column(db.String(255), nullable=False)
+class User(UserMixin, db.Model):
+    __tablename__ = "users"
+
+    id               = db.Column(db.Integer, primary_key=True)
+    username         = db.Column(db.String(255), unique=True, nullable=False)
+    password         = db.Column(db.String(255), nullable=False)
+    push_subscription = db.Column(JSONB)  # JSONB now imported
 
 # Load the user from the database based on user ID
 @login_manager.user_loader
@@ -1539,6 +1548,127 @@ def cash_count_register_detail(username, added_iso):
         detail=detail,
         total=total
     )
+
+# routes.py ― employee view
+@app.route("/insumos/request", methods=["GET"])
+def insumo_form():
+    employees = ['Karina', 'Andy', 'Paco', 'David', 'Fanny', 'Tony', 'Otro']
+    return render_template("insumo_request.html", employees=employees)
+
+@app.route("/insumos/request", methods=["POST"])
+def create_insumo_request():
+    data = request.get_json(force=True)
+    req = InsumoRequest(
+        employee=data["employee"],
+        name=data["insumo"],
+        measure=data["measure"],
+        quantity=float(data["quantity"]),
+        urgency=data["urgency"],
+        notes=data.get("notes")
+    )
+    db.session.add(req)
+    db.session.commit()
+    return ("", 204)          # 204 = success, no content
+
+# routes.py ― simple admin list w/ “assign” modal
+@app.route("/admin/insumos")
+@login_required
+def admin_insumos():
+    reqs = (db.session
+            .query(InsumoRequest)
+            .order_by(InsumoRequest.created_at.desc())
+            .all())
+    employees = ['Steven', 'Adriana', 'Andre', 'Romina']
+    return render_template("admin_insumos.html", reqs=reqs, employees=employees)
+# @app.route("/admin/insumos/<int:req_id>/assign", methods=["POST"])
+# @login_required
+# def assign_insumo(req_id):
+#     req = db.session.get(InsumoRequest, req_id)   # ← SQLAlchemy 2.0 style
+
+#     if req is None:
+#         abort(404)
+
+#     req.assigned_to = request.form["assigned_to"]
+#     req.status      = "asignado"
+#     db.session.commit()
+#     return redirect(url_for("admin_insumos"))
+
+from flask import Response, stream_with_context
+from events import assignment_event_stream, push_assignment_event
+
+@app.route('/insumo/events')
+def insumo_events():
+    return Response(
+        stream_with_context(assignment_event_stream()),
+        mimetype='text/event-stream'
+    )
+
+from pywebpush import webpush, WebPushException
+
+
+def send_push(user, payload: dict):
+    subscription = user.push_subscription  # the JSON from the client
+    if not subscription: return
+
+    try:
+        webpush(
+            subscription_info=subscription,
+            data=json.dumps(payload),
+            vapid_private_key=VAPID_PRIVATE,
+            vapid_public_key=VAPID_PUBLIC,
+            vapid_claims=VAPID_CLAIMS
+        )
+    except WebPushException as ex:
+        # handle expired subscriptions, remove from DB, etc.
+        print("WebPush error:", ex)
+
+@app.route("/admin/insumos/<int:req_id>/assign", methods=["POST"])
+@login_required
+def assign_insumo(req_id):
+    req = db.session.get(InsumoRequest, req_id)
+    if not req:
+        abort(404)
+
+    user = User.query.filter_by(username='steven').first()
+    if not user:
+        abort(404, description="Empleado no encontrado")
+
+    # now send_push(...) will receive a User, so user.push_subscription works
+    payload = {
+      "title": f"Insumo asignado: {req.name}",
+      "body":  f"{req.quantity} {req.measure} — urgencia {req.urgency}"
+    }
+    send_push(user, payload)
+    return redirect(url_for("admin_insumos"))
+
+
+@app.route('/save_push_subscription', methods=['POST'])
+@login_required
+def save_push_subscription():
+    sub = request.get_json()
+    current_user.push_subscription = sub
+    db.session.commit()
+    return ('', 204)
+
+from pywebpush import webpush, WebPushException
+
+
+def send_push(user, payload: dict):
+    subscription = user.push_subscription  # the JSON from the client
+    if not subscription: return
+
+    try:
+        webpush(
+            subscription_info=subscription,
+            data=json.dumps(payload),
+            vapid_private_key=VAPID_PRIVATE,
+            vapid_public_key=VAPID_PUBLIC,
+            vapid_claims=VAPID_CLAIMS
+        )
+    except WebPushException as ex:
+        # handle expired subscriptions, remove from DB, etc.
+        print("WebPush error:", ex)
+
 
 
 # Run app locally

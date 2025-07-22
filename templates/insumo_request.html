@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Solicitud de Insumos{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+<style>
+  /* basic mobile‑first tweaks */
+  .fade-page{animation:fade .25s both}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <h2 class="fs-5 text-center mb-4">Solicitud de insumos</h2>
+
+  <!-- ── request form ─────────────────────────────── -->
+  <form id="insumoForm" class="needs-validation" novalidate>
+
+    <!-- Employee selector (searchable via datalist)  -->
+    <div class="mb-3">
+      <label class="form-label fw-semibold" for="employee">Empleado <span class="text-danger">*</span></label>
+      <input class="form-control" list="employeeList" id="employee" name="employee" placeholder="Selecciona tu nombre" required>
+      <datalist id="employeeList">
+        {% for emp in employees %}<option value="{{ emp }}">{% endfor %}
+      </datalist>
+      <div class="invalid-feedback">Selecciona tu nombre.</div>
+    </div>
+
+    <!-- Insumo name -->
+    <div class="mb-3">
+      <label class="form-label fw-semibold" for="insumo">Insumo <span class="text-danger">*</span></label>
+      <input type="text" class="form-control" id="insumo" name="insumo" placeholder="Ej. Harina, Azúcar…" required>
+      <div class="invalid-feedback">El nombre del insumo es obligatorio.</div>
+    </div>
+
+    <!-- Measure + Qty side‑by‑side on ≥576px -->
+    <div class="row g-3 mb-3">
+      <div class="col-6">
+        <label class="form-label fw-semibold" for="measure">Unidad <span class="text-danger">*</span></label>
+        <select class="form-select" id="measure" name="measure" required>
+          <option value="" selected disabled>Selecciona…</option>
+          <option value="unidades">Unidades</option>
+          <option value="kg">Kg</option>
+          <option value="g">g</option>
+          <option value="l">L</option>
+          <option value="ml">mL</option>
+        </select>
+        <div class="invalid-feedback">¿Cómo se mide este insumo?</div>
+      </div>
+
+      <div class="col-6">
+        <label class="form-label fw-semibold" for="quantity">Cantidad <span class="text-danger">*</span></label>
+        <input type="number" step="any" min="0" class="form-control" id="quantity" name="quantity" placeholder="0" required>
+        <div class="invalid-feedback">Ingresa la cantidad.</div>
+      </div>
+    </div>
+
+    <!-- Urgency selector -->
+    <div class="mb-3">
+      <label class="form-label fw-semibold" for="urgency">Urgencia <span class="text-danger">*</span></label>
+      <select class="form-select" id="urgency" name="urgency" required>
+        <option value="" selected disabled>Selecciona…</option>
+        <option value="baja">Baja</option>
+        <option value="media">Media</option>
+        <option value="alta">Alta</option>
+      </select>
+      <div class="invalid-feedback">Selecciona el nivel de urgencia.</div>
+    </div>
+
+    <!-- Notes -->
+    <div class="mb-4">
+      <label class="form-label fw-semibold" for="notes">Notas (opcional)</label>
+      <textarea class="form-control" id="notes" name="notes" rows="2" placeholder="Detalles adicionales…"></textarea>
+    </div>
+
+    <button class="btn btn-primary w-100" type="submit">
+      <i class="bi bi-send me-1"></i>Enviar solicitud
+    </button>
+  </form>
+
+  <!-- success alert -->
+  <div id="alertSuccess" class="alert alert-success mt-3 d-none" role="alert">
+    ¡Solicitud enviada! 🎉
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(() => {
+  const form = document.getElementById('insumoForm');
+  const alertBox = document.getElementById('alertSuccess');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    form.classList.add('was-validated');
+    if(!form.checkValidity()) return;
+
+    const data = Object.fromEntries(new FormData(form).entries());
+
+    try {
+      const res = await fetch('{{ url_for("create_insumo_request") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if(!res.ok) throw new Error('Error al guardar');
+
+      form.reset();
+      form.classList.remove('was-validated');
+      alertBox.classList.remove('d-none');
+      setTimeout(() => alertBox.classList.add('d-none'), 4000);
+    } catch(err) {
+      alert(err.message);
+    }
+  });
+})();
+</script>
+{% endblock %}

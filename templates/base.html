@@ -35,6 +35,52 @@
         }
     </style>
 </head>
+<script>
+if ('serviceWorker' in navigator && 'PushManager' in window) {
+  window.addEventListener('load', async () => {
+    try {
+      // 1. Register the SW
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      console.log('SW registered:', registration);
+
+      // 2. Ask for Notification permission
+      const status = await Notification.requestPermission();
+      if (status !== 'granted') {
+        console.warn('Notifications not granted');
+        return;
+      }
+
+      // 3. Subscribe to Push
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array('<YOUR-VAPID-PUBLIC-KEY>')
+      });
+      console.log('Push subscribed:', subscription);
+
+      // 4. Send subscription to your server
+      await fetch('/save_push_subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscription)
+      });
+    } catch (err) {
+      console.error('SW / Push error:', err);
+    }
+  });
+}
+
+// Utility to convert VAPID key
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const b64       = (base64String + padding)
+                    .replace(/\-/g, '+')
+                    .replace(/_/g, '/');
+  const rawData   = atob(b64);
+  return Uint8Array.from(
+    [...rawData].map(char => char.charCodeAt(0))
+  );
+}
+</script>
 
 <body>
     <!-- navbar-dark provides a white toggler icon -->

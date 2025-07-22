@@ -24,4 +24,6 @@ pytz
 requests
 Flask-Caching
 APScheduler
+pywebpush
+cryptography
 

@@ -66,6 +66,7 @@ class User(Base):
     id =Column(Integer, primary_key=True)
     username = Column(String(255), unique=True, nullable=False)
     password = Column(String(255), nullable=False)
+    push_subsription = Column(JSONB)
 
 
 
@@ -197,5 +198,31 @@ class ChangeCount(Base):
         default=lambda: datetime.now(MX_TZ),   # ← local timestamp
         nullable=False
     )
+
+from datetime import datetime
+from sqlalchemy import (
+    Column, BigInteger, String, Float, Enum, Text, DateTime
+)
+class InsumoRequest(Base):
+    __tablename__   = "insumo_requests"
+    __table_args__  = {"schema": "public", "extend_existing": True}
+
+    id          = Column(BigInteger, primary_key=True)
+    employee    = Column(String(50),  nullable=False)
+    name        = Column(String(80),  nullable=False)
+    measure     = Column(String(10),  nullable=False)          # unidades, kg, g, etc.
+    quantity    = Column(Float,       nullable=False)
+    urgency     = Column(
+        Enum("baja", "media", "alta", name="urgency_level"),
+        nullable=False
+    )
+    notes       = Column(Text)
+    status      = Column(
+        Enum("pendiente", "asignado", "cerrado", name="insumo_status"),
+        default="pendiente",
+        nullable=False
+    )
+    assigned_to = Column(String(50))
+    created_at  = Column(DateTime(timezone=False), default=datetime.utcnow)
 
 
