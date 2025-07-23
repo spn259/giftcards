@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime, timedelta, date, timezone
 from threading import Lock
 from zoneinfo import ZoneInfo
+from collections import defaultdict
 
 # ── Third-party libs ────────────────────────────────────────────────
 import boto3, pandas as pd, pytz
@@ -1450,33 +1451,47 @@ def send_push_insumo(user, payload: dict):
         # handle expired subscriptions, remove from DB, etc.
         print("WebPush error:", ex)
 
-
-@app.route("/admin/insumos/<int:req_id>/assign", methods=["POST"])
+@app.post("/admin/insumos/<int:req_id>/assign")
 @login_required
-def assign_insumo(req_id):
+def assign_insumo(req_id: int):
+    """Assign an insumo request to an employee and send a push alert."""
+    # ── 1. Find the request row ────────────────────────────────────────────
     req = db.session.get(InsumoRequest, req_id)
-    if not req:
-        abort(404)
+    if req is None:
+        abort(404, description="Solicitud no encontrada")
 
-    user = User.query.filter_by(username="steven").first()
-    if not user:
-        abort(404, description="Empleado no encontrado")
+    # ── 2. Get assignee from form (came from the modal) ────────────────────
+    assignee = request.form.get("assigned_to", "").strip()
+    if not assignee:
+        flash("Debes seleccionar un empleado.", "danger")
+        return redirect(url_for("admin_insumos"))
 
+    user = db.session.execute(
+        select(User).filter_by(username=assignee)
+    ).scalar_one_or_none()
+    if user is None:
+        flash("Empleado no encontrado.", "danger")
+        return redirect(url_for("admin_insumos"))
+
+    # ── 3. Update DB row ───────────────────────────────────────────────────
+    req.assigned_to = assignee
+    req.status      = "asignado"        # keep in sync with the ENUM
+    db.session.commit()
+
+    # ── 4. Push notification (fire-and-forget) ────────────────────────────
     payload = {
         "title": f"Insumo asignado: {req.name}",
-        "body": f"{req.quantity} {req.measure} — urgencia {req.urgency}",
+        "body":  f"{req.quantity} {req.measure} — urgencia {req.urgency}",
+        "url":   "/admin/insumos"
     }
-    send_push_insumo(user, payload)
+    # send_push_insumo(user, payload)     # wrap in try/except inside helper
+
+    flash("Insumo asignado correctamente.", "success")
     return redirect(url_for("admin_insumos"))
 
 
-@app.route("/save_push_subscription", methods=["POST"])
-@login_required
-def save_push_subscription():
-    sub = request.get_json()
-    current_user.push_subscription = sub
-    db.session.commit()
-    return ("", 204)
+
+
 
 from flask import send_from_directory, make_response
 

@@ -55,7 +55,7 @@
           </tr>
         </thead>
         <tbody>
-          {% for d in (1, 2, 5, 10, 20, 50) %}
+          {% for d in (1, 2, 5, 10, 20, 50, 100) %}
           <tr>
             <!-- label -->
             <td class="text-end denom-label pe-3">${{ d }}</td>
@@ -97,7 +97,7 @@
 {# ---- SCRIPT AT THE BOTTOM -------------------------------- #}
 <script>
   function updateTotal () {
-    var values = {1:1, 2:2, 5:5, 10:10, 20:20, 50:50};
+    var values = {1:1, 2:2, 5:5, 10:10, 20:20, 50:50, 100:100};
     var pesos  = 0;
 
     for (var denom in values) {
