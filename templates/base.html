@@ -1,168 +1,119 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Default Title{% endblock %}</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Default Title{% endblock %}</title>
 
-    <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
-          rel="stylesheet">
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
+        rel="stylesheet">
 
-    <style>
-        /* ——— Brand colour ——— */
-        .navbar-custom {
-            background-color: #f15a24;
-        }
+  <style>
+    /* ——— Brand colour ——— */
+    .navbar-custom        { background:#f15a24; }
 
-        /* ——— Prettier links ——— */
-        .navbar-custom .nav-link {
-            color: #fff;
-            font-weight: 500;
-            padding: .5rem 1rem;
-            border-radius: .25rem;
-            transition: background-color .15s ease, color .15s ease;
-        }
-        .navbar-custom .nav-link:hover,
-        .navbar-custom .nav-link:focus {
-            color: #fefefe;
-            background-color: rgba(255, 255, 255, 0.15);
-            text-decoration: none;
-        }
-        .navbar-custom .nav-link.active {
-            background-color: #fff;
-            color: #f15a24;
-        }
-    </style>
+    /* ——— Prettier links ——— */
+    .navbar-custom .nav-link       { color:#fff;font-weight:500;padding:.5rem 1rem;
+                                     border-radius:.25rem;transition:.15s; }
+    .navbar-custom .nav-link:hover { color:#fefefe;background:rgba(255,255,255,.15); }
+    .navbar-custom .nav-link.active{ background:#fff;color:#f15a24; }
+  </style>
+
+  <!-- Beams SDK -->
+  <script src="https://js.pusher.com/beams/2.1.0/push-notifications-cdn.js"></script>
 </head>
-<!-- ── NOTIFICATION BUTTON ───────────────────────────────────────────── -->
-<button id="btnAllowNotifications"
-        class="btn btn-warning shadow position-fixed d-none"
-        style="bottom:1rem;right:1rem;z-index:1080;">
-  🔔 Activar Notificaciones
-</button>
-<!-- ──────────────────────────────────────────────────────────────────── -->
-
-<!-- <script src="https://js.pusher.com/beams/2.1.0/push-notifications-cdn.js"></script> -->
-<!-- 
-<script>
-  const beamsClient = new PusherPushNotifications.Client({
-    instanceId: 'eefea3b0-83c1-4eb0-9e19-0f20ee7debbc',
-  });
-
-  beamsClient.start()
-    .then(() => beamsClient.addDeviceInterest('hello'))
-    .then(() => console.log('Successfully registered and subscribed!'))
-    .catch(console.error);
-</script> -->
-
-<script src="https://js.pusher.com/beams/1.0/push-notifications-cdn.js"></script>
-<script>
-(async () => {
-  if (!('serviceWorker' in navigator)) return;
-
-  // 1. Register the SW that only imports Pusher’s worker
-  await navigator.serviceWorker.register('/service-worker.js');
-
-  // 2. Initialise Beams
-  const beamsClient = new PusherPushNotifications.Client({
-    instanceId: 'eefea3b0-83c1-4eb0-9e19-0f20ee7debbc'
-  });
-
-  // 3. Build the TokenProvider that points to our Flask auth route
-  const tokenProvider = new PusherPushNotifications.TokenProvider({
-    url: "/pusher/beams-auth",               // exact Flask route
-  });
-
-  // 4. Ask the user for permission & link the device with their user-id
-  console.log("{{ current_user.id }}")
-  try {
-    await beamsClient.start();
-    await beamsClient.setUserId("{{ current_user.id }}", tokenProvider);
-    console.log("🔔 Beams ready for user", "{{ current_user.id }}");
-  } catch (err) {
-    console.error("Beams setup failed:", err);
-  }
-})();
-</script>
-<script>
-const currentUserId = "{{ current_user.id }}";  
-console.log(currentUserId);       
-const beamsClient = new PusherPushNotifications.Client({
-  instanceId: 'eefea3b0-83c1-4eb0-9e19-0f20ee7debbc'                 // injected via context_processor
-});
-
-(async () => {
-  try {
-    await beamsClient.start();                           // initialise SDK
-
-    const beamsUser = await beamsClient.getUserId();     // may be null
-    if (beamsUser && beamsUser !== currentUserId) {
-      // Device was linked to a different user → unlink
-      await beamsClient.stop();
-      console.log("Beams user reset (mismatched session)");
-    }
-  } catch (err) {
-    console.error("Beams error:", err);
-  }
-})();
-</script>
-
-
 
 <body>
-    <!-- navbar-dark provides a white toggler icon -->
-     <!-- ── NOTIFICATION BUTTON ───────────────────────────────────────────── -->
+  <!-- ── NOTIFICATION BUTTON (hidden until needed) ──────────────────── -->
+  <button id="btnAllowNotifications"
+          class="btn btn-warning shadow position-fixed d-none"
+          style="bottom:1rem;right:1rem;z-index:1080;">
+    🔔 Activar Notificaciones
+  </button>
+  <!-- ──────────────────────────────────────────────────────────────── -->
 
-    <nav class="navbar navbar-expand-lg navbar-dark navbar-custom">
-        <div class="container-fluid">
+  <nav class="navbar navbar-expand-lg navbar-dark navbar-custom">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="#">
+        <img src="{{ url_for('static', filename='logo.png') }}"
+             alt="Company Logo" height="40">
+      </a>
 
-            <!-- Logo -->
-            <a class="navbar-brand" href="#">
-                <img src="{{ url_for('static', filename='logo.png') }}"
-                     alt="Company Logo" height="40">
-            </a>
+      {% if current_user.is_authenticated %}
+      <button class="navbar-toggler border-0" type="button"
+              data-bs-toggle="collapse" data-bs-target="#mainNav"
+              aria-controls="mainNav" aria-expanded="false"
+              aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
 
-            {% if current_user.is_authenticated %}
-            <!-- Hamburger button (only shows below lg) -->
-            <button class="navbar-toggler border-0"
-                    type="button"
-                    data-bs-toggle="collapse"
-                    data-bs-target="#mainNav"
-                    aria-controls="mainNav"
-                    aria-expanded="false"
-                    aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-          
+      <div class="collapse navbar-collapse" id="mainNav">
+        <ul class="navbar-nav ms-auto gap-lg-2">
+          <li class="nav-item"><a class="nav-link" href="/scan">Scan</a></li>
+          <li class="nav-item"><a class="nav-link" href="/main_landing">Admin&nbsp;Landing</a></li>
+          <li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+  </nav>
 
-            <!-- Collapsible links; visible everywhere, collapsible on mobile -->
-            <div class="collapse navbar-collapse" id="mainNav">
-                <ul class="navbar-nav ms-auto gap-lg-2">
-                    <li class="nav-item">
-                        <a class="nav-link" href="/scan">Scan</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/main_landing">Admin&nbsp;Landing</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/logout">Logout</a>
-                    </li>
-                    <li>
-                      
-                    </li>
-                </ul>
-            </div>
-            {% endif %}
+  {% block content %}{% endblock %}
 
-        </div>
-    </nav>
+  <!-- Bootstrap JS bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 
+  <!-- ── PUSH NOTIFICATIONS SET-UP ──────────────────────────────────── -->
+  <script>
+  (async () => {
+    if (!('serviceWorker' in navigator)) return;     // push not supported
 
+    /* 1. Service-worker that only pulls Beams’ worker code */
+    await navigator.serviceWorker.register('/service-worker.js');
 
-    {% block content %}{% endblock %}
+    /* 2. Instantiate Beams once */
+    const beamsClient = new PusherPushNotifications.Client({
+      instanceId: 'eefea3b0-83c1-4eb0-9e19-0f20ee7debbc'
+    });
 
-    <!-- Bootstrap 5 JS bundle (popper + bootstrap.js) -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    const currentUserId = "{{ current_user.id }}";      // Jinja inject
+    const askBtn        = document.getElementById('btnAllowNotifications');
+
+    /** Set up Beams with our auth endpoint and user id */
+    const initBeams = async () => {
+      await beamsClient.start();
+
+      /* — handle “this device was linked to a *different* user” — */
+      const existing = await beamsClient.getUserId();      // may be null
+      if (existing && existing !== currentUserId) {
+        await beamsClient.clearAllState();                 // nuke old key
+        await beamsClient.start();                         // fresh start
+      }
+
+      if (currentUserId) {
+        const tokenProvider = new PusherPushNotifications.TokenProvider({
+          url: '/pusher/beams-auth'
+        });
+        await beamsClient.setUserId(currentUserId, tokenProvider);
+      }
+      console.log('🔔 Beams ready for user', currentUserId || '(anon)');
+    };
+
+    /* 3. Permission flow */
+    if (Notification.permission === 'granted') {
+      await initBeams();                                  // we’re good
+    } else if (Notification.permission === 'default') {
+      askBtn.classList.remove('d-none');                  // show prompt
+      askBtn.addEventListener('click', async () => {
+        askBtn.disabled = true;
+        const perm = await Notification.requestPermission();
+        if (perm === 'granted') await initBeams();
+        askBtn.remove();                                  // hide either way
+      });
+    }
+  })();
+  </script>
+  <!-- ──────────────────────────────────────────────────────────────── -->
 </body>
 </html>

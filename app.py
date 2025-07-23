@@ -65,7 +65,7 @@ openai_token = os.environ["openai_token"]
 BEAMS_INSTANCE_ID = os.environ["BEAMS_INSTANCE_ID"]
 BEAMS_SECRET_KEY = os.environ["BEAMS_SECRET_KEY"]
 
-
+local = True
 if local:
     from my_secrets import env_vars
 
@@ -169,7 +169,8 @@ def beams_auth():
     """
     requested_id = request.args.get("user_id") 
     print(requested_id)         # from query-string
-    actual_id    = str(current_user.id)                 # from Flask-Login
+    actual_id    = str(current_user.id)    
+                 # from Flask-Login
 
     if requested_id != actual_id:
         abort(401, description="Inconsistent request")
@@ -180,40 +181,29 @@ def beams_auth():
 
     return jsonify(beams_token)  
 
-def push_message(user_id, message):
-    response = beams_client.publish_to_users(
-    user_ids=[user_id],
-    publish_body={
-        'apns': {
-        'aps': {
-            'alert': {
-            'title': 'Hello',
-            'body': 'Hello, world!',
+def push_message(user_id: int, message: str) -> None:
+    beams_client.publish_to_users(
+        user_ids=[str(user_id)],                 # ← use the real user-id
+        publish_body={
+            "web": {
+                "notification": {                # ONLY Web-Notification fields here
+                    "title": "Pedido nuevo",
+                    "body":  message,
+                    "icon":  "https://lionfish-app-zpcxb.ondigitalocean.app/static/logo-128.png"
+                },
+                # Extra Beams-specific keys go **next to** notification
+                "deep_link": "https://lionfish-app-zpcxb.ondigitalocean.app/admin/insumos"
             },
+            # (Optional) native payloads:
+            # "fcm": {...},
+            # "apns": {...},
         },
-        },
-        'fcm': {
-        'notification': {
-            'title': 'Hello',
-            'body': message,
-        },
-        },
-        'web': {
-        'notification': {
-            'title': 'what is up dog',
-            'body': 'yo yo',
-        },
-        },
-    },
     )
-
-    print(response['publishId'])       
-
 
 
 @app.route("/employee_landing", methods=["GET", "POST"])
 def employee_landing():
-    push_message('1', 'employee')
+    push_message('1', 'You have hit the employee landing page.')
     return render_template("employee_landing.html")
 
 @app.route("/")
@@ -1395,6 +1385,7 @@ def cash_count_register_detail(username, added_iso):
 # routes.py ― employee view
 @app.route("/insumos/request_form", methods=["GET"])
 def insumo_form():
+    push_message('1', 'You have hit the insumos page.')
     employees = ["Karina", "Andy", "Paco", "David", "Fanny", "Tony", "Otro"]
     return render_template("insumo_request.html", employees=employees)
 
@@ -1493,6 +1484,9 @@ def assign_insumo(req_id: int):
     req.assigned_to = assignee
     req.status      = "asignado"        # keep in sync with the ENUM
     db.session.commit()
+    emp_id = db.session.query(User.id).filter(User.username == assignee).one()
+    print(emp_id[0])
+    push_message(str(emp_id[0]), 'Te asignaron un insumo')
 
     # ── 4. Push notification (fire-and-forget) ────────────────────────────
     payload = {
