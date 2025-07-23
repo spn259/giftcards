@@ -125,7 +125,7 @@ class User(UserMixin, db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-ALLOWED_USERS = {"steven", "romina"}
+ALLOWED_USERS = {"steven", "romina", "adriana", "andre"}
 app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
 app.config.update(
     REMEMBER_COOKIE_SECURE=True,  # HTTPS only
