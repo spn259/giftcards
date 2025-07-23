@@ -65,9 +65,6 @@ openai_token = os.environ["openai_token"]
 BEAMS_INSTANCE_ID = os.environ["BEAMS_INSTANCE_ID"]
 BEAMS_SECRET_KEY = os.environ["BEAMS_SECRET_KEY"]
 
-local = True
-if local:
-    from my_secrets import env_vars
 
 _spaces = boto3.client(
     "s3",
