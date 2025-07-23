@@ -39,6 +39,9 @@ from functools import wraps
 from werkzeug.security import check_password_hash, generate_password_hash
 
 MX_TZ = ZoneInfo("America/Mexico_City")
+from pusher_push_notifications import PushNotifications
+
+
 
 local = False
 if local:
@@ -46,6 +49,7 @@ if local:
     from pathlib import Path
     dotenv_path = Path(__file__).resolve().parent / ".env"
     load_dotenv(dotenv_path=dotenv_path)
+
 
 username = os.environ["dbusername"]
 password = os.environ["password"]
@@ -58,13 +62,12 @@ spaces_key_id = os.environ["spaces_key_id"]
 spaces_bucket_endpoint = os.environ["spaces_bucket_endpoint"]
 spaces_bucket_name = os.environ["spaces_bucket_name"]
 openai_token = os.environ["openai_token"]
+BEAMS_INSTANCE_ID = os.environ["BEAMS_INSTANCE_ID"]
+BEAMS_SECRET_KEY = os.environ["BEAMS_SECRET_KEY"]
+
 
 if local:
     from my_secrets import env_vars
-
-    VAPID_PUBLIC = env_vars.get("VAPID_PUBLIC_KEY")
-    VAPID_PRIVATE = env_vars.get("VAPID_PRIVATE_KEY")
-VAPID_CLAIMS = {"sub": "mailto:steven@austindonutcompany.com.mx"}
 
 _spaces = boto3.client(
     "s3",
@@ -143,23 +146,6 @@ def username_required(view_func):
 
     return wrapped_view
 
-def send_push(user, payload: dict):
-    subscription = user.push_subscription  # the JSON from the client
-    if not subscription:
-        return
-
-    try:
-        webpush(
-            subscription_info=subscription,
-            data=json.dumps(payload),
-            vapid_private_key=VAPID_PRIVATE,
-            vapid_public_key=VAPID_PUBLIC,
-            vapid_claims=VAPID_CLAIMS,
-        )
-    except WebPushException as ex:
-        # handle expired subscriptions, remove from DB, etc.
-        print("WebPush error:", ex)
-
 
 @username_required
 @login_required  # 👈 just stack it above your view
@@ -167,8 +153,67 @@ def send_push(user, payload: dict):
 def main_landing():
     return render_template("main_landing.html")
 
+app.config['BEAMS_INSTANCE_ID'] = BEAMS_INSTANCE_ID
+beams_client = PushNotifications(
+    instance_id=BEAMS_INSTANCE_ID,
+    secret_key=BEAMS_SECRET_KEY,
+)
+
+@app.route("/pusher/beams-auth", methods=["GET"])
+@login_required                         # 🔒 user must be logged-in
+def beams_auth():
+    """
+    Pusher Beams auth endpoint.
+    The Web-SDK calls it with ?user_id=<id>; we make sure that id
+    matches the logged-in user, then return a signed JWT.
+    """
+    requested_id = request.args.get("user_id") 
+    print(requested_id)         # from query-string
+    actual_id    = str(current_user.id)                 # from Flask-Login
+
+    if requested_id != actual_id:
+        abort(401, description="Inconsistent request")
+
+    # one positional argument – the user_id
+    beams_token = beams_client.generate_token(actual_id)
+    print(beams_token)
+
+    return jsonify(beams_token)  
+
+def push_message(user_id, message):
+    response = beams_client.publish_to_users(
+    user_ids=[user_id],
+    publish_body={
+        'apns': {
+        'aps': {
+            'alert': {
+            'title': 'Hello',
+            'body': 'Hello, world!',
+            },
+        },
+        },
+        'fcm': {
+        'notification': {
+            'title': 'Hello',
+            'body': message,
+        },
+        },
+        'web': {
+        'notification': {
+            'title': 'what is up dog',
+            'body': 'yo yo',
+        },
+        },
+    },
+    )
+
+    print(response['publishId'])       
+
+
+
 @app.route("/employee_landing", methods=["GET", "POST"])
 def employee_landing():
+    push_message('1', 'employee')
     return render_template("employee_landing.html")
 
 @app.route("/")
@@ -1364,20 +1409,7 @@ from app import app, db
 push_pool = ThreadPoolExecutor(max_workers=4)
 
 def _send_webpush(subscription: dict, payload: dict):
-    """Run inside executor → non-blocking for the request thread."""
-    body = json.dumps(payload, ensure_ascii=False)
-    try:
-        webpush(
-            subscription_info = subscription,
-            data              = body,
-            vapid_private_key = VAPID_PRIVATE,
-            vapid_claims      = VAPID_CLAIMS,
-            ttl               = 60,
-        )
-        logging.warning(body)
-    except WebPushException as ex:
-        # Log and swallow; avoid crashing the worker thread
-        app.logger.warning("WebPush error for %s: %s", subscription.get("endpoint"), ex)
+    return True
 
 
 # ─────────── Route ───────────────────────────────────────
@@ -1434,22 +1466,6 @@ def insumo_events():
         stream_with_context(assignment_event_stream()), mimetype="text/event-stream"
     )
 
-def send_push_insumo(user, payload: dict):
-    subscription = user.push_subscription  # the JSON from the client
-    if not subscription:
-        return
-
-    try:
-        webpush(
-            subscription_info=subscription,
-            data=json.dumps(payload),
-            vapid_private_key=VAPID_PRIVATE,
-            vapid_public_key=VAPID_PUBLIC,
-            vapid_claims=VAPID_CLAIMS,
-        )
-    except WebPushException as ex:
-        # handle expired subscriptions, remove from DB, etc.
-        print("WebPush error:", ex)
 
 @app.post("/admin/insumos/<int:req_id>/assign")
 @login_required
@@ -1495,16 +1511,19 @@ def assign_insumo(req_id: int):
 
 from flask import send_from_directory, make_response
 
-@app.route("/sw.js")
+@app.route("/service-worker.js")
 def service_worker():
-    resp = make_response(
-        send_from_directory("static", "sw.js", mimetype="text/javascript")
+    static_dir = Path(app.root_path) / "static"
+    response   = send_from_directory(
+        static_dir,
+        "service_worker.js",
+        mimetype="text/javascript"
     )
-    # Disable caching
-    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    resp.headers["Pragma"]        = "no-cache"
-    resp.headers["Expires"]       = "0"
-    return resp
+    # Optional: force re-fetch on each deploy
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"]        = "no-cache"
+    response.headers["Expires"]       = "0"
+    return response
 
 # routes.py  – replace the old update_insumo_status function
 from flask import request, redirect, flash, url_for, current_app, abort
