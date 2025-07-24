@@ -703,6 +703,7 @@ def enter_production_counts():
 @app.route("/save_production_counts", methods=["GET", "POST"])
 def save_production_counts():
     # ── 1.  Constants / helpers ─────────────────────────────────
+    from datetime import datetime, time   # time is now the class, not the module
     cst_tz = pytz.timezone("America/Mexico_City")
 
     # ── 2.  Read scalar form fields ─────────────────────────────
