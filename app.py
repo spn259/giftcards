@@ -1418,7 +1418,7 @@ def create_insumo_request():
     db.session.add(req)
     db.session.commit()
 
-    # 2.  Prepare  payload once
+    import requests 
     payload = {
         "title":   "Nueva solicitud de insumo",
         "body":    f"{req.employee} pidió {req.quantity} {req.measure} de {req.name}",
@@ -1426,15 +1426,22 @@ def create_insumo_request():
         "id":      req.id,
     }
 
-    # 3.  Enqueue pushes (non-blocking)
-    recipients = ["steven", "andre", "adriana", "romina"]
-    for username in recipients:
-        user = db.session.execute(
-            db.select(User).filter_by(username=username)
-        ).scalar_one_or_none()
+    requests.post("https://ntfy.sh/adc-alerts-insumos",
+    data=f"""{{payload.title}}.""".encode('utf-8'),
+        headers={
+            "Title": payload["body"],
+            "Click": "https://lionfish-app-zpcxb.ondigitalocean.app/admin/insumos"
+        })
 
-        if user and user.push_subscription:
-            push_pool.submit(_send_webpush, user.push_subscription, payload)
+    # # 3.  Enqueue pushes (non-blocking)
+    # recipients = ["steven", "andre", "adriana", "romina"]
+    # for username in recipients:
+    #     user = db.session.execute(
+    #         db.select(User).filter_by(username=username)
+    #     ).scalar_one_or_none()
+
+    #     if user and user.push_subscription:
+    #         push_pool.submit(_send_webpush, user.push_subscription, payload)
 
     # 4.  Immediate 204 → front-end shows success without delay
     return ("", 204)
@@ -1478,20 +1485,25 @@ def assign_insumo(req_id: int):
         return redirect(url_for("admin_insumos"))
 
     # ── 3. Update DB row ───────────────────────────────────────────────────
+    import requests 
     req.assigned_to = assignee
     req.status      = "asignado"        # keep in sync with the ENUM
     db.session.commit()
+    requests.post("https://ntfy.sh/adc-alerts-{}".format(assignee),
+    data=f"""{assignee}: Te asignaron un insumo: {req.name}.""".encode('utf-8'),
+        headers={
+            "Click": "https://lionfish-app-zpcxb.ondigitalocean.app/admin/insumos"
+        })
     emp_id = db.session.query(User.id).filter(User.username == assignee).one()
-    print(emp_id[0])
-    push_message(str(emp_id[0]), 'Te asignaron un insumo')
 
-    # ── 4. Push notification (fire-and-forget) ────────────────────────────
-    payload = {
-        "title": f"Insumo asignado: {req.name}",
-        "body":  f"{req.quantity} {req.measure} — urgencia {req.urgency}",
-        "url":   "/admin/insumos"
-    }
-    # send_push_insumo(user, payload)     # wrap in try/except inside helper
+
+    # # ── 4. Push notification (fire-and-forget) ────────────────────────────
+    # payload = {
+    #     "title": f"Insumo asignado: {req.name}",
+    #     "body":  f"{req.quantity} {req.measure} — urgencia {req.urgency}",
+    #     "url":   "/admin/insumos"
+    # }
+    # # send_push_insumo(user, payload)     # wrap in try/except inside helper
 
     flash("Insumo asignado correctamente.", "success")
     return redirect(url_for("admin_insumos"))
