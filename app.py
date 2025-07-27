@@ -1626,7 +1626,7 @@ def create_insumo():
 
     # ------------- POST: guardar -----------------------------------------
     if request.method == "POST":
-        name      = request.form.get("name", "").strip()
+        name      = request.form.get("name", "").strip().upper()
         measure   = request.form.get("measure")
         area      = request.form.get("area")
         proveedor = request.form.get("proveedor", "").strip()
