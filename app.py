@@ -39,7 +39,6 @@ from functools import wraps
 from werkzeug.security import check_password_hash, generate_password_hash
 
 MX_TZ = ZoneInfo("America/Mexico_City")
-from pusher_push_notifications import PushNotifications
 
 
 
@@ -62,8 +61,6 @@ spaces_key_id = os.environ["spaces_key_id"]
 spaces_bucket_endpoint = os.environ["spaces_bucket_endpoint"]
 spaces_bucket_name = os.environ["spaces_bucket_name"]
 openai_token = os.environ["openai_token"]
-BEAMS_INSTANCE_ID = os.environ["BEAMS_INSTANCE_ID"]
-BEAMS_SECRET_KEY = os.environ["BEAMS_SECRET_KEY"]
 
 
 _spaces = boto3.client(
@@ -117,10 +114,32 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(255), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
     push_subscription = db.Column(JSONB)  # JSONB now imported
+    
+    @property
+    def is_employee(self): return False
+    @property
+    def is_admin(self):    return True
+    
 
 @login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
+def load_user(user_id: str):
+    """Restore the correct user object from the session cookie."""
+    # ── ① admin ids are plain integers ───────────────────────────
+    if user_id.isdigit():
+        return User.query.get(int(user_id))
+
+    # ── ② employee ids are “emp-<int>” ──────────────────────────
+    if user_id.startswith("emp-"):
+        try:
+            worker_id = int(user_id.split("-", 1)[1])   # "emp-6" → 6
+        except (IndexError, ValueError):
+            return None
+        row = db.session.get(WorkerPin, worker_id)
+        return EmployeeProxy(row) if row else None
+
+    # anything else → anonymous
+    return None
+
 
 ALLOWED_USERS = {"steven", "romina", "adriana", "andre"}
 app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
@@ -130,6 +149,73 @@ app.config.update(
     REMEMBER_COOKIE_SAMESITE="Lax",
 )
 
+class EmployeeProxy(UserMixin):
+    """Wraps a WorkerPin row so Flask-Login can track it."""
+    def __init__(self, row: WorkerPin):
+        self._row = row
+        self.id   = f"emp-{row.id}"          # unique session id
+        self.name = row.worker_name
+    
+    def get_id(self):           # override for clarity
+        return self.id  
+
+    # flags for convenience
+    @property
+    def is_employee(self): return True
+    @property
+    def is_admin(self):    return False
+
+from functools import wraps
+from flask import request, redirect, url_for, abort
+from flask_login import current_user
+
+def employee_required(view):
+    """Only allow authenticated employees."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        # ① not signed in → go to the employee login page
+        if not current_user.is_authenticated:
+            return redirect(url_for("employee_login", next=request.url))
+
+        # ② signed in but wrong role
+        if not getattr(current_user, "is_employee", False):
+            return abort(403)
+
+        # ③ all good
+        return view(*args, **kwargs)
+
+    return wrapped
+
+from flask import render_template, request, flash
+
+@app.route("/employee_login", methods=["GET", "POST"])
+def employee_login():
+    # # already logged in as employee ⇒ skip form
+    # if current_user.is_authenticated and current_user.is_employee:
+    #     return redirect(url_for("employee_landing"))
+    
+    if current_user.is_authenticated and getattr(current_user, "is_employee", False):
+        return redirect(url_for("employee_landing"))
+
+
+    if request.method == "POST":
+        pin = request.form.get("pin", "").strip()
+        worker = db.session.query(WorkerPin).filter_by(pin=int(pin)).first()
+        print(worker)
+        if worker:
+            print("OOGGING")
+            login_user(
+                EmployeeProxy(worker),
+                remember=True,
+                duration=timedelta(hours=2)   # 2-hour “remember me”
+            )
+            return redirect(request.args.get("next") or
+                            url_for("employee_landing"))
+
+        flash("Invalid PIN.", "danger")
+
+    return render_template("employee_login.html")
+
 
 def username_required(view_func):
     """Allow the route only for specific usernames."""
@@ -137,70 +223,26 @@ def username_required(view_func):
     @wraps(view_func)
     @login_required  # must be logged in first
     def wrapped_view(*args, **kwargs):
-        if current_user.username not in ALLOWED_USERS:
-            abort(403)  # Forbidden
+        try:
+            if current_user.username not in ALLOWED_USERS:
+                return redirect(url_for("employee_login", next=request.url))
+        except:
+            url_for("login", next=request.url)
+
         return view_func(*args, **kwargs)
 
     return wrapped_view
 
 
-@username_required
-@login_required  # 👈 just stack it above your view
 @app.route("/main_landing", methods=["GET", "POST"])
+@login_required                         # ensures login
+@username_required                      # then checks allowed list
 def main_landing():
     return render_template("main_landing.html")
 
-app.config['BEAMS_INSTANCE_ID'] = BEAMS_INSTANCE_ID
-beams_client = PushNotifications(
-    instance_id=BEAMS_INSTANCE_ID,
-    secret_key=BEAMS_SECRET_KEY,
-)
-
-@app.route("/pusher/beams-auth", methods=["GET"])
-@login_required                         # 🔒 user must be logged-in
-def beams_auth():
-    """
-    Pusher Beams auth endpoint.
-    The Web-SDK calls it with ?user_id=<id>; we make sure that id
-    matches the logged-in user, then return a signed JWT.
-    """
-    requested_id = request.args.get("user_id") 
-    print(requested_id)         # from query-string
-    actual_id    = str(current_user.id)    
-                 # from Flask-Login
-
-    if requested_id != actual_id:
-        abort(401, description="Inconsistent request")
-
-    # one positional argument – the user_id
-    beams_token = beams_client.generate_token(actual_id)
-    print(beams_token)
-
-    return jsonify(beams_token)  
-
-def push_message(user_id: int, message: str) -> None:
-    beams_client.publish_to_users(
-        user_ids=[str(user_id)],                 # ← use the real user-id
-        publish_body={
-            "web": {
-                "notification": {                # ONLY Web-Notification fields here
-                    "title": "Pedido nuevo",
-                    "body":  message,
-                    "icon":  "https://lionfish-app-zpcxb.ondigitalocean.app/static/logo-128.png"
-                },
-                # Extra Beams-specific keys go **next to** notification
-                "deep_link": "https://lionfish-app-zpcxb.ondigitalocean.app/admin/insumos"
-            },
-            # (Optional) native payloads:
-            # "fcm": {...},
-            # "apns": {...},
-        },
-    )
-
-
 @app.route("/employee_landing", methods=["GET", "POST"])
+@employee_required                      # <─ now Flask wraps it too
 def employee_landing():
-    push_message('1', 'You have hit the employee landing page.')
     return render_template("employee_landing.html")
 
 @app.route("/")
@@ -1381,27 +1423,30 @@ def cash_count_register_detail(username, added_iso):
 
 
 # routes.py ― employee view
+@employee_required                      # <─ now Flask wraps it too
 @app.route("/insumos/request_form", methods=["GET"])
 def insumo_form():
-    push_message('1', 'You have hit the insumos page.')
-    employees = ["Karina", "Andy", "Paco", "David", "Fanny", "Tony", "Otro"]
-    return render_template("insumo_request.html", employees=employees)
+    from models import InsumoList
+    employee_name = current_user.name
+
+    # ── consulta ───────────────────────────────────────────────────────────
+    # Devuelve dict { "Harina": "KG", ... }  y lista ordenada de nombres
+    insumos_dict = dict(
+        db.session.query(InsumoList.insumo_name, InsumoList.measure).all()
+    )
+    insumo_names = sorted(insumos_dict.keys(), key=str.lower)
+
+    # ── render ─────────────────────────────────────────────────────────────
+    return render_template(
+        "insumo_request.html",
+        employee_name=employee_name,
+        insumos=insumos_dict,          # dict Jinja
+        insumo_names=insumo_names      # lista para datalist
+    )
+ 
 
 
-# routes.py  – imports near the top of the file
-from concurrent.futures import ThreadPoolExecutor
-from app import app, db
-
-
-
-# one shared pool (4 workers is plenty for a few pushes per request)
-push_pool = ThreadPoolExecutor(max_workers=4)
-
-def _send_webpush(subscription: dict, payload: dict):
-    return True
-
-
-# ─────────── Route ───────────────────────────────────────
+@employee_required                      # <─ now Flask wraps it too
 @app.post("/insumos/request")
 def create_insumo_request():
     """Create a new InsumoRequest and kick off web-pushes asynchronously."""
@@ -1434,17 +1479,6 @@ def create_insumo_request():
             "Click": "https://lionfish-app-zpcxb.ondigitalocean.app/admin/insumos"
         })
 
-    # # 3.  Enqueue pushes (non-blocking)
-    # recipients = ["steven", "andre", "adriana", "romina"]
-    # for username in recipients:
-    #     user = db.session.execute(
-    #         db.select(User).filter_by(username=username)
-    #     ).scalar_one_or_none()
-
-    #     if user and user.push_subscription:
-    #         push_pool.submit(_send_webpush, user.push_subscription, payload)
-
-    # 4.  Immediate 204 → front-end shows success without delay
     return ("", 204)
 
 @app.route("/admin/insumos")
@@ -1498,36 +1532,10 @@ def assign_insumo(req_id: int):
     emp_id = db.session.query(User.id).filter(User.username == assignee).one()
 
 
-    # # ── 4. Push notification (fire-and-forget) ────────────────────────────
-    # payload = {
-    #     "title": f"Insumo asignado: {req.name}",
-    #     "body":  f"{req.quantity} {req.measure} — urgencia {req.urgency}",
-    #     "url":   "/admin/insumos"
-    # }
-    # # send_push_insumo(user, payload)     # wrap in try/except inside helper
-
     flash("Insumo asignado correctamente.", "success")
     return redirect(url_for("admin_insumos"))
 
 
-
-
-
-from flask import send_from_directory, make_response
-
-@app.route("/service-worker.js")
-def service_worker():
-    static_dir = Path(app.root_path) / "static"
-    response   = send_from_directory(
-        static_dir,
-        "service_worker.js",
-        mimetype="text/javascript"
-    )
-    # Optional: force re-fetch on each deploy
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response.headers["Pragma"]        = "no-cache"
-    response.headers["Expires"]       = "0"
-    return response
 
 # routes.py  – replace the old update_insumo_status function
 from flask import request, redirect, flash, url_for, current_app, abort

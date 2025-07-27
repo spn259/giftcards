@@ -75,6 +75,7 @@ class WorkerPin(Base):
     added = Column(DateTime, nullable=False)
 
 
+
 class CustomerPin(Base):
     __tablename__ = "customer_pin"
     __table_args__ = {"schema": "public", "extend_existing": True}
@@ -207,10 +208,7 @@ class InsumoRequest(Base):
     measure     = Column(String(10),  nullable=False)          # unidades, kg, g, etc.
     quantity    = Column(Float,       nullable=False)
 
-    urgency     = Column(
-        Enum("baja", "media", "alta", name="urgency_level"),
-        nullable=False
-    )
+    urgency     = Column(String)
 
     notes       = Column(Text)
 
@@ -238,3 +236,11 @@ class InsumoRequest(Base):
     )
     # ───────────────────────────────────────────────────────────
 
+class InsumoList(Base):
+    __tablename__ = "insumo_list"
+    __table_args__ = {"schema": "public", "extend_existing": True}
+
+    id = Column(BigInteger, primary_key=True)
+    insumo_name = Column(String, nullable=False)
+    measure = Column(String, nullable=False)
+    added = Column(DateTime, nullable=False)

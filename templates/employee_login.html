@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Employee Sign-In{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <h2 class="fs-5 mb-4">Employee Sign-In</h2>
+  <form method="post" style="max-width:18rem">
+    <label class="form-label" for="pin">4-digit PIN</label>
+    <input  type="password" class="form-control text-center"
+            name="pin" id="pin" minlength="4" maxlength="6"
+            pattern="\d{4,6}" inputmode="numeric" required>
+    <button class="btn btn-primary w-100 mt-3" type="submit">Sign In</button>
+  </form>
+</div>
+{% endblock %}

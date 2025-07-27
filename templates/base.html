@@ -20,19 +20,11 @@
     .navbar-custom .nav-link.active{ background:#fff;color:#f15a24; }
   </style>
 
-  <!-- Beams SDK -->
-  <script src="https://js.pusher.com/beams/2.1.0/push-notifications-cdn.js"></script>
+
 </head>
 
 <body>
-  <!-- ── NOTIFICATION BUTTON (hidden until needed) ──────────────────── -->
-  <button id="btnAllowNotifications"
-          class="btn btn-warning shadow position-fixed d-none"
-          style="bottom:1rem;right:1rem;z-index:1080;">
-    🔔 Activar Notificaciones
-  </button>
-  <!-- ──────────────────────────────────────────────────────────────── -->
-
+ 
   <nav class="navbar navbar-expand-lg navbar-dark navbar-custom">
     <div class="container-fluid">
       <a class="navbar-brand" href="#">
@@ -64,56 +56,5 @@
   <!-- Bootstrap JS bundle -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 
-  <!-- ── PUSH NOTIFICATIONS SET-UP ──────────────────────────────────── -->
-  <script>
-  (async () => {
-    if (!('serviceWorker' in navigator)) return;     // push not supported
-
-    /* 1. Service-worker that only pulls Beams’ worker code */
-    await navigator.serviceWorker.register('/service-worker.js');
-
-    /* 2. Instantiate Beams once */
-    const beamsClient = new PusherPushNotifications.Client({
-      instanceId: 'eefea3b0-83c1-4eb0-9e19-0f20ee7debbc'
-    });
-
-    const currentUserId = "{{ current_user.id }}";      // Jinja inject
-    const askBtn        = document.getElementById('btnAllowNotifications');
-
-    /** Set up Beams with our auth endpoint and user id */
-    const initBeams = async () => {
-      await beamsClient.start();
-
-      /* — handle “this device was linked to a *different* user” — */
-      const existing = await beamsClient.getUserId();      // may be null
-      if (existing && existing !== currentUserId) {
-        await beamsClient.clearAllState();                 // nuke old key
-        await beamsClient.start();                         // fresh start
-      }
-
-      if (currentUserId) {
-        const tokenProvider = new PusherPushNotifications.TokenProvider({
-          url: '/pusher/beams-auth'
-        });
-        await beamsClient.setUserId(currentUserId, tokenProvider);
-      }
-      console.log('🔔 Beams ready for user', currentUserId || '(anon)');
-    };
-
-    /* 3. Permission flow */
-    if (Notification.permission === 'granted') {
-      await initBeams();                                  // we’re good
-    } else if (Notification.permission === 'default') {
-      askBtn.classList.remove('d-none');                  // show prompt
-      askBtn.addEventListener('click', async () => {
-        askBtn.disabled = true;
-        const perm = await Notification.requestPermission();
-        if (perm === 'granted') await initBeams();
-        askBtn.remove();                                  // hide either way
-      });
-    }
-  })();
-  </script>
-  <!-- ──────────────────────────────────────────────────────────────── -->
 </body>
 </html>
