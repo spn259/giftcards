@@ -6,35 +6,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-
 <style>
-  /* fade-in */
   .fade-page{animation:fade .25s both}
   @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1}}
 
-  /* radios a “píldoras” auto-ajustables */
   .btn-group{flex-wrap:wrap}
-  .btn-group .btn{
-    flex:1 1 0;
-    text-transform:uppercase;
-    margin:2px 0;
-  }
+  .btn-group .btn{flex:1 1 0;text-transform:uppercase;margin:2px 0}
+  @media(min-width:576px){.btn-group .btn{margin:0}}
 
-  /* en pantallas >576px mantenemos una sola fila */
-  @media (min-width:576px){
-    .btn-group .btn{margin:0}
-  }
-
-  /* textarea amigable */
   textarea{resize:vertical;min-height:72px}
 
-  /* sticky botón enviar (solo móvil) */
-  @media (max-width:575.98px){
-    .sticky-submit{
-      position:sticky;bottom:0;left:0;right:0;
-      z-index:10;
-      border-radius:0;
-    }
+  @media(max-width:575.98px){
+    .sticky-submit{position:sticky;bottom:0;left:0;right:0;z-index:10;border-radius:0}
   }
 </style>
 {% endblock %}
@@ -43,7 +26,6 @@
 <div class="container py-4 fade-page">
   <h2 class="fs-5 text-center mb-4">Solicitud de insumos</h2>
 
-  <!-- ── formulario ─────────────────────────────────────────────────────── -->
   <form id="insumoForm" class="needs-validation" novalidate>
     <input type="hidden" name="employee" value="{{ employee_name }}">
 
@@ -53,7 +35,7 @@
       <input type="text" class="form-control-plaintext" value="{{ employee_name }}" readonly>
     </div>
 
-    <!-- Insumo con datalist -->
+    <!-- Insumo -->
     <div class="mb-3">
       <label class="form-label fw-semibold mb-1" for="insumo">
         Insumo <span class="text-danger">*</span>
@@ -66,12 +48,12 @@
       <div class="invalid-feedback">El nombre del insumo es obligatorio.</div>
     </div>
 
-    <!-- Medida + Cantidad -->
+    <!-- Medida -->
     <div class="mb-3">
       <label class="form-label fw-semibold mb-1 d-block">
         Unidad <span class="text-danger">*</span>
       </label>
-      <div class="btn-group w-100" role="group" aria-label="Unidad">
+      <div class="btn-group w-100" role="group">
         {% for u,lbl in [('pz','PZ'),('kg','KG'),('g','G'),('l','L'),('ml','ML')] %}
           <input type="radio" class="btn-check" name="measure" id="measure_{{u}}"
                  value="{{u}}" autocomplete="off" {% if loop.first %}required{% endif %}>
@@ -81,6 +63,7 @@
       <div class="invalid-feedback d-block">¿Cómo se mide este insumo?</div>
     </div>
 
+    <!-- Cantidad -->
     <div class="mb-3">
       <label class="form-label fw-semibold mb-1" for="quantity">
         Cantidad <span class="text-danger">*</span>
@@ -95,10 +78,9 @@
       <label class="form-label fw-semibold mb-1 d-block">
         Urgencia <span class="text-danger">*</span>
       </label>
-      <div class="btn-group w-100" role="group" aria-label="Urgencia">
-        {% for v,lbl in [
-          ('ahora','Ahora'),('hoy','Hoy p/ mañana'),
-          ('manana','Mañana'),('proximos_dias','Próx. días')] %}
+      <div class="btn-group w-100" role="group">
+        {% for v,lbl in [('ahora','Ahora'),('hoy','Hoy p/ mañana'),
+                         ('manana','Mañana'),('proximos_dias','Próx. días')] %}
           <input type="radio" class="btn-check" name="urgency" id="urg_{{v}}"
                  value="{{v}}" autocomplete="off" {% if loop.first %}required{% endif %}>
           <label class="btn btn-outline-primary btn-sm" for="urg_{{v}}">{{lbl}}</label>
@@ -124,7 +106,6 @@
   </div>
 </div>
 
-<!-- scripts -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 (() => {
@@ -132,32 +113,49 @@
   const alertBox   = document.getElementById('alertSuccess');
   const insumo     = document.getElementById('insumo');
   const measureRad = () => document.querySelectorAll('input[name="measure"]');
-  const insumosMap = {{ insumos | tojson }};
 
-  const normalize = (u)=>{if(!u)return'';const m={PZ:'pz',KG:'kg',L:'l',GR:'g',G:'g'};
-                          return m[u.toUpperCase()]||u.toLowerCase()};
+  /* mapa insumo → medida (en minúsculas) */
+  const rawMap  = {{ insumos | tojson }};
+  const mapLower = {};
+  for (const [k,v] of Object.entries(rawMap)){
+    mapLower[k.toLowerCase()] = v;
+  }
 
-  insumo.addEventListener('change',()=>{
-    const val=normalize(insumosMap[insumo.value.trim()]);
-    measureRad().forEach(r=>r.checked=r.value===val);
-  });
+  const normalize = u => {
+    if(!u) return '';
+    const m = {PZ:'pz',KG:'kg',L:'l',GR:'g',G:'g'};
+    return (m[u.toUpperCase()] || u.toLowerCase());
+  };
 
-  form.addEventListener('submit',async e=>{
-    e.preventDefault();e.stopPropagation();
+  const autofill = () => {
+    const key = insumo.value.trim().toLowerCase();
+    const val = normalize(mapLower[key]);
+    if(val){
+      measureRad().forEach(r => r.checked = (r.value === val));
+    }
+  };
+
+  /* Firefox: usar input + change */
+  insumo.addEventListener('input', autofill);
+  insumo.addEventListener('change', autofill);
+
+  /* envío */
+  form.addEventListener('submit', async e => {
+    e.preventDefault(); e.stopPropagation();
     form.classList.add('was-validated');
     if(!form.checkValidity()) return;
-    const data=Object.fromEntries(new FormData(form).entries());
+
+    const data = Object.fromEntries(new FormData(form).entries());
     try{
-      const res=await fetch('{{ url_for("create_insumo_request") }}',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
+      const res = await fetch('{{ url_for("create_insumo_request") }}',{
+        method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify(data)
       });
       if(!res.ok) throw new Error('Error al guardar');
-      form.reset();form.classList.remove('was-validated');
+      form.reset(); form.classList.remove('was-validated');
       alertBox.classList.remove('d-none');
       setTimeout(()=>alertBox.classList.add('d-none'),4000);
-    }catch(err){alert(err.message);}
+    }catch(err){ alert(err.message); }
   });
 })();
 </script>
