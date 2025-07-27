@@ -41,7 +41,6 @@ from werkzeug.security import check_password_hash, generate_password_hash
 MX_TZ = ZoneInfo("America/Mexico_City")
 
 
-
 local = False
 if local:
     from dotenv import load_dotenv
@@ -1445,6 +1444,31 @@ def insumo_form():
     )
  
 
+def send_insumo_ntfy(req):
+    import requests
+
+    # Texto principal (cuerpo del push)
+    body = f"{req.employee} pidió {req.quantity} {req.measure} de {req.name}"
+
+    # Cabecera Title del push
+    title = f"Nuevo insumo: {req.status.capitalize()} ({req.urgency})"
+
+    # Cabecera Priority según urgencia ntfy (1-5). Ajusta a tu gusto.
+    prio_map = {"ahora": "5", "hoy": "4", "manana": "3", "proximos_dias": "2"}
+    priority = prio_map.get(req.urgency, "3")
+
+    requests.post(
+        "https://ntfy.sh/adc-alerts-insumos",
+        data=body.encode("utf-8"),          # cuerpo en UTF-8
+        headers={
+            "Title":     title,             # título con acentos
+            "Priority":  priority,          # prioridad opcional
+            "Click":     "https://lionfish-app-zpcxb.ondigitalocean.app/admin/insumos",
+            "Content-Type": "text/plain; charset=utf-8"  # ¡importante!
+        },
+        timeout=5
+    )
+
 
 @employee_required                      # <─ now Flask wraps it too
 @app.post("/insumos/request")
@@ -1455,7 +1479,7 @@ def create_insumo_request():
     # 1.  Create + commit the request
     req = InsumoRequest(
         employee = data["employee"],
-        name     = data["insumo"],
+        name     = data["insumo"].upper(),
         measure  = data["measure"],
         quantity = float(data["quantity"]),
         urgency  = data["urgency"],
@@ -1463,32 +1487,44 @@ def create_insumo_request():
     )
     db.session.add(req)
     db.session.commit()
-
-    import requests 
-    payload = {
-        "title":   "Nueva solicitud de insumo",
-        "body":    f"{req.employee} pidió {req.quantity} {req.measure} de {req.name}",
-        "urgency": req.urgency,
-        "id":      req.id,
-    }
-
-    requests.post("https://ntfy.sh/adc-alerts-insumos",
-    data=f"""{{payload.title}}.""".encode('utf-8'),
-        headers={
-            "Title": payload["body"],
-            "Click": "https://lionfish-app-zpcxb.ondigitalocean.app/admin/insumos"
-        })
-
+    send_insumo_ntfy(req)
+    
     return ("", 204)
+
+# routes.py
 
 @app.route("/admin/insumos")
 @login_required
 def admin_insumos():
+    from models import InsumoList
+    # solicitudes (más recientes primero)
     reqs = (
-        db.session.query(InsumoRequest).order_by(InsumoRequest.created_at.desc()).all()
+        db.session.query(InsumoRequest)
+        .order_by(InsumoRequest.created_at.desc())
+        .all()
     )
+
+    # nombres existentes en el catálogo
+    catalogo = {
+        x.insumo_name.strip().lower(): x        # objeto InsumoList
+        for x in db.session.query(InsumoList).all()
+    }
+
+    # añade a cada solicitud un flag y datos del catálogo
+    for r in reqs:
+        key              = (r.name or "").strip().lower()
+        r.in_catalog     = key in catalogo
+        r.catalog_item   = catalogo.get(key)    # None si no existe
+        # ejemplo extra: medida en catálogo
+        r.catalog_measure = r.catalog_item.measure if r.catalog_item else None
+
     employees = ["steven", "adriana", "andre", "romina"]
-    return render_template("admin_insumos.html", reqs=reqs, employees=employees)
+    return render_template(
+        "admin_insumos.html",
+        reqs=reqs,
+        employees=employees
+    )
+
 
 @app.route("/insumo/events")
 def insumo_events():
@@ -1615,11 +1651,12 @@ def create_insumo():
 
         try:
             nuevo = InsumoList(
-                insumo_name = name,
+                insumo_name = name.upper(),
                 measure     = measure,
                 area        = area,
                 proveedor   = proveedor or None,
-                created_by  = current_user.id   # si tu modelo lo tiene
+                added = datetime.utcnow()   # si tu modelo lo tiene
+
             )
             db.session.add(nuevo)
             db.session.commit()
@@ -1644,7 +1681,15 @@ def create_insumo():
         prefill_measure= prefill_measure
     )
 
+@app.route("/insumos")
+@login_required
+def view_insumos():
+    insumos = db.session.execute(
+        text("SELECT id, insumo_name, measure, added, proveedor, area "
+             "FROM public.insumo_list ORDER BY insumo_name")
+    ).mappings()    # o usa tu modelo SQLAlchemy
 
+    return render_template("insumos_table.html", insumos=insumos)
 
 if local:
     app.run(debug=True, host="0.0.0.0", port=8080, threaded=True, use_reloader=True)

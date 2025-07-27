@@ -14,7 +14,6 @@
   .urgencia-media{background:#fff8e6}
   .urgencia-alta {background:#fdecea}
 
-  /* mobile card */
   @media(max-width:575.98px){
     thead{display:none}
     tbody tr{display:block;margin:0 0 .75rem;border:1px solid #dee2e6;border-radius:.5rem}
@@ -47,21 +46,21 @@
       <thead class="table-light">
         <tr>
           <th>#</th><th>Fecha</th><th>Empleado</th><th>Insumo</th>
-          <th>Cant.</th><th>Urgencia</th><th>Estado</th><th>Asignado&nbsp;a</th>
+          <th>Cant.</th><th>In Catologo</th><th>Urgencia</th><th>Estado</th><th>Asignado&nbsp;a</th>
         </tr>
       </thead>
       <tbody>
         {% for r in reqs %}
-        {% set st        = r.status|lower|trim %}
-        {% set archived  = st in ('completado','cancelado') %}
-        {% set bg, fg    = status_colors.get(st,('#e2e3e5','#41464b')) %}
+        {% set st = r.status|lower|trim %}
+        {% set archived = st in ('completado','cancelado') %}
+        {% set bg, fg = status_colors.get(st,('#e2e3e5','#41464b')) %}
         <tr class="urgencia-{{ r.urgency }}{% if archived %} is-archived{% endif %}"
             {% if archived %}style="display:none;"{% endif %}>
           <td data-label="#">{{ loop.index }}</td>
           <td data-label="fecha">{{ r.created_at.strftime('%d-%b %H:%M') }}</td>
           <td data-label="empleado">{{ r.employee }}</td>
 
-          {# Nombre → link a create_insumo con ?prefill=&measure=&next= #}
+          <!-- nombre (link a alta) -->
           <td data-label="insumo">
             <a class="text-decoration-none"
                href="{{ url_for('create_insumo',
@@ -72,13 +71,24 @@
             </a>
           </td>
 
+          <!-- cantidad -->
           <td data-label="cant.">
             {{ ('%.0f' % r.quantity).rstrip('0').rstrip('.') }} {{ r.measure }}
           </td>
 
+          <!-- en catálogo -->
+          <td data-label="cat.">
+            {% if r.in_catalog %}
+              <i class="bi bi-check-circle-fill text-success" title="En catálogo">True</i>
+            {% else %}
+              <i class="bi bi-x-circle-fill text-danger" title="No está en catálogo">False</i>
+            {% endif %}
+          </td>
+
+          <!-- urgencia -->
           <td data-label="urgencia" class="text-capitalize">{{ r.urgency }}</td>
 
-          <!-- Estado -->
+          <!-- estado -->
           <td data-label="estado"
               style="background:{{ bg }};color:{{ fg }};font-weight:600;padding:0"
               class="text-center">
@@ -89,7 +99,7 @@
             </button>
           </td>
 
-          <!-- Asignado a -->
+          <!-- asignado -->
           <td data-label="asignado a" style="padding:0">
             <button class="btn btn-link w-100 text-decoration-none text-start"
                     data-bs-toggle="modal" data-bs-target="#assignModal-{{ r.id }}">
@@ -102,57 +112,63 @@
     </table>
   </div>
 
-  {# ——— MODALS ——— #}
+  {# ── MODALS (sin cambios) ── #}
   {% for r in reqs %}
+  <!-- Asignar -->
   <div class="modal fade" id="assignModal-{{ r.id }}" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
-      <form action="{{ url_for('assign_insumo', req_id=r.id) }}" method="post">
-        {% if csrf_token %}{{ csrf_token() }}{% endif %}
-        <div class="modal-header">
-          <h5 class="modal-title">Asignar insumo</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <p class="mb-2"><strong>Insumo:</strong> {{ r.name }}</p>
-          <div class="mb-3">
-            <label class="form-label" for="assigned_to_{{ r.id }}">Asignar a</label>
-            <input class="form-control" list="employees_{{ r.id }}"
-                   name="assigned_to" id="assigned_to_{{ r.id }}"
-                   value="{{ r.assigned_to or '' }}" required>
-            <datalist id="employees_{{ r.id }}">
-              {% for e in employees %}<option value="{{ e }}">{% endfor %}
-            </datalist>
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form action="{{ url_for('assign_insumo', req_id=r.id) }}" method="post">
+          {% if csrf_token %}{{ csrf_token() }}{% endif %}
+          <div class="modal-header">
+            <h5 class="modal-title">Asignar insumo</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
-        </div>
-        <div class="modal-footer"><button class="btn btn-primary">Guardar</button></div>
-      </form>
-    </div></div>
+          <div class="modal-body">
+            <p class="mb-2"><strong>Insumo:</strong> {{ r.name }}</p>
+            <div class="mb-3">
+              <label class="form-label" for="assigned_to_{{ r.id }}">Asignar a</label>
+              <input class="form-control" list="employees_{{ r.id }}"
+                     name="assigned_to" id="assigned_to_{{ r.id }}"
+                     value="{{ r.assigned_to or '' }}" required>
+              <datalist id="employees_{{ r.id }}">
+                {% for e in employees %}<option value="{{ e }}">{% endfor %}
+              </datalist>
+            </div>
+          </div>
+          <div class="modal-footer"><button class="btn btn-primary">Guardar</button></div>
+        </form>
+      </div>
+    </div>
   </div>
 
+  <!-- Actualizar estado -->
   <div class="modal fade" id="statusModal-{{ r.id }}" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
-      <form action="{{ url_for('update_insumo_status', req_id=r.id) }}" method="post">
-        {% if csrf_token %}{{ csrf_token() }}{% endif %}
-        <div class="modal-header">
-          <h5 class="modal-title">Actualizar estado</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <p class="mb-2"><strong>Insumo:</strong> {{ r.name }}</p>
-          <div class="mb-3">
-            <label class="form-label" for="status_{{ r.id }}">Nuevo estado</label>
-            <select class="form-select" id="status_{{ r.id }}" name="status" required>
-              {% for s in ['pendiente','asignado','en progreso','completado','cancelado'] %}
-                <option value="{{ s }}" {% if s == r.status %}selected{% endif %}>
-                  {{ s|capitalize }}
-                </option>
-              {% endfor %}
-            </select>
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form action="{{ url_for('update_insumo_status', req_id=r.id) }}" method="post">
+          {% if csrf_token %}{{ csrf_token() }}{% endif %}
+          <div class="modal-header">
+            <h5 class="modal-title">Actualizar estado</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
-        </div>
-        <div class="modal-footer"><button class="btn btn-primary">Guardar</button></div>
-      </form>
-    </div></div>
+          <div class="modal-body">
+            <p class="mb-2"><strong>Insumo:</strong> {{ r.name }}</p>
+            <div class="mb-3">
+              <label class="form-label" for="status_{{ r.id }}">Nuevo estado</label>
+              <select class="form-select" id="status_{{ r.id }}" name="status" required>
+                {% for s in ['pendiente','asignado','en progreso','completado','cancelado'] %}
+                  <option value="{{ s }}" {% if s == r.status %}selected{% endif %}>
+                    {{ s|capitalize }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer"><button class="btn btn-primary">Guardar</button></div>
+        </form>
+      </div>
+    </div>
   </div>
   {% endfor %}
 </div>

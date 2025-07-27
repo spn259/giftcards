@@ -20,14 +20,11 @@
     .sticky-submit{position:sticky;bottom:0;left:0;right:0;z-index:10;border-radius:0}
   }
 
-  /* type-ahead dropdown */
+  /* dropdown */
   #suggestions{
-    position:absolute;                 /* anchored to the input’s wrapper */
-    top:100%; left:0; right:0;
-    z-index:1055;                      /* higher than form controls */
-    max-height:210px; overflow-y:auto;
-    background:#fff; border:1px solid #dee2e6;
-    border-top:none;                   /* merges with input border */
+    position:absolute;top:100%;left:0;right:0;z-index:1055;
+    max-height:210px;overflow-y:auto;background:#fff;
+    border:1px solid #dee2e6;border-top:none
   }
   #suggestions .list-group-item{cursor:pointer}
 </style>
@@ -55,9 +52,7 @@
              placeholder="Ej. Harina, Azúcar…" required>
       <datalist id="insumoList">{% for n in insumo_names %}<option value="{{ n }}">{% endfor %}</datalist>
 
-      <!-- dropdown -->
       <div id="suggestions" class="list-group d-none shadow-sm rounded-bottom"></div>
-
       <div class="invalid-feedback">El nombre del insumo es obligatorio.</div>
     </div>
 
@@ -92,7 +87,7 @@
         Urgencia <span class="text-danger">*</span>
       </label>
       <div class="btn-group w-100" role="group">
-        {% for v,lbl in [('ahora','Ahora'),('hoy','Hoy p/ mañana'),
+        {% for v,lbl in [('ahora mismo','Ahora mismo'),('hoy','Hoy p/ mañana'),
                          ('manana','Mañana'),('proximos_dias','Próx. días')] %}
           <input type="radio" class="btn-check" name="urgency" id="urg_{{v}}" value="{{v}}"
                  {% if loop.first %}required{% endif %}>
@@ -105,8 +100,8 @@
     <!-- Notas -->
     <div class="mb-4">
       <label class="form-label fw-semibold mb-1" for="notes">Notas (opcional)</label>
-      <textarea class="form-control" id="notes" name="notes"
-                rows="2" placeholder="Detalles adicionales…"></textarea>
+      <textarea class="form-control" id="notes" name="notes" rows="2"
+                placeholder="Detalles adicionales…"></textarea>
     </div>
 
     <button class="btn btn-primary w-100 sticky-submit" type="submit">
@@ -126,51 +121,70 @@
   const menu  = document.getElementById('suggestions');
   const radios= () => document.querySelectorAll('input[name="measure"]');
 
-  /* mapa insumo → medida */
-  const raw={{ insumos | tojson }};
-  const map={}; for(const[k,v]of Object.entries(raw)){map[k.trim().toLowerCase()]=v;}
+  /* mapa nombreLower → medida y arreglo con nombres en su forma original */
+  const raw   = {{ insumos | tojson }};
+  const names = Object.keys(raw);           // nombres tal como están
+  const map   = {}; names.forEach(n=>map[n.trim().toLowerCase()] = raw[n]);
 
-  const normal=u=>{const m={PZ:'pz',KG:'kg',L:'l',GR:'g',G:'g'};return m[u?.toUpperCase()]||u?.toLowerCase()||'';}
-
-  const fillUnit=name=>{
-    const val=normal(map[name]);
-    if(val){ radios().forEach(r=>r.checked=(r.value===val)); }
+  const normalize = u=>{
+    const m={PZ:'pz',KG:'kg',L:'l',GR:'g',G:'g'};
+    return m[u?.toUpperCase()]||u?.toLowerCase()||'';
   };
 
-  const show=()=>{
-    const q=inp.value.trim().toLowerCase();
-    menu.innerHTML=''; if(!q){menu.classList.add('d-none');return;}
-    const matches=Object.keys(map).filter(n=>n.startsWith(q)).slice(0,8);
-    if(!matches.length){menu.classList.add('d-none');return;}
+  const fillUnit = nameOriginal => {
+    const val = normalize(map[nameOriginal.toLowerCase()]);
+    if(val){ radios().forEach(r=>r.checked = (r.value === val)); }
+  };
+
+  /* mostrar sugerencias respetando mayúsculas originales */
+  const show = ()=>{
+    const q = inp.value.trim().toLowerCase();
+    menu.innerHTML = '';
+    if(!q){ menu.classList.add('d-none'); return; }
+
+    const matches = names.filter(n => n.toLowerCase().startsWith(q)).slice(0,8);
+    if(!matches.length){ menu.classList.add('d-none'); return; }
+
     matches.forEach(n=>{
-      const btn=document.createElement('button');
-      btn.type='button';btn.className='list-group-item list-group-item-action';
-      btn.textContent=n;btn.onclick=()=>{inp.value=n;fillUnit(n);menu.classList.add('d-none');document.getElementById('quantity').focus();};
-      menu.appendChild(btn);
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'list-group-item list-group-item-action';
+      item.textContent = n;               // conserva capitalización original
+      item.onclick = () => {
+        inp.value = n;
+        fillUnit(n);
+        menu.classList.add('d-none');
+        document.getElementById('quantity').focus();
+      };
+      menu.appendChild(item);
     });
     menu.classList.remove('d-none');
   };
 
-  inp.addEventListener('input',show);
-  inp.addEventListener('focus',show);
-  document.addEventListener('click',e=>{
-    if(!menu.contains(e.target)&&e.target!==inp){menu.classList.add('d-none');}
+  inp.addEventListener('input', show);
+  inp.addEventListener('focus', show);
+  document.addEventListener('click', e=>{
+    if(!menu.contains(e.target) && e.target !== inp){ menu.classList.add('d-none'); }
   });
 
-  /* submit */
+  /* envío */
   document.getElementById('insumoForm').addEventListener('submit',async e=>{
-    e.preventDefault();e.stopPropagation();
-    const f=e.target;f.classList.add('was-validated');if(!f.checkValidity())return;
+    e.preventDefault(); e.stopPropagation();
+    const f = e.target;
+    f.classList.add('was-validated');
+    if(!f.checkValidity()) return;
+
     try{
-      const res=await fetch('{{ url_for("create_insumo_request") }}',{
-        method:'POST',headers:{'Content-Type':'application/json'},
+      const res = await fetch('{{ url_for("create_insumo_request") }}',{
+        method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify(Object.fromEntries(new FormData(f).entries()))
       });
-      if(!res.ok)throw new Error();
-      f.reset();f.classList.remove('was-validated');
-      const al=document.getElementById('alertSuccess');al.classList.remove('d-none');
+      if(!res.ok) throw new Error();
+      f.reset(); f.classList.remove('was-validated');
+      const al = document.getElementById('alertSuccess');
+      al.classList.remove('d-none');
       setTimeout(()=>al.classList.add('d-none'),4000);
-    }catch{alert('Error al guardar');}
+    }catch{ alert('Error al guardar'); }
   });
 })();
 </script>
