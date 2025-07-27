@@ -1,3 +1,4 @@
+{# templates/insumo_request.html #}
 {% extends "base.html" %}
 {% block title %}Solicitud de Insumos{% endblock %}
 
@@ -19,8 +20,15 @@
     .sticky-submit{position:sticky;bottom:0;left:0;right:0;z-index:10;border-radius:0}
   }
 
-  /* type-ahead list */
-  #suggestions{max-height:210px;overflow-y:auto}
+  /* type-ahead dropdown */
+  #suggestions{
+    position:absolute;                 /* anchored to the input’s wrapper */
+    top:100%; left:0; right:0;
+    z-index:1055;                      /* higher than form controls */
+    max-height:210px; overflow-y:auto;
+    background:#fff; border:1px solid #dee2e6;
+    border-top:none;                   /* merges with input border */
+  }
   #suggestions .list-group-item{cursor:pointer}
 </style>
 {% endblock %}
@@ -38,7 +46,7 @@
       <input type="text" class="form-control-plaintext" value="{{ employee_name }}" readonly>
     </div>
 
-    <!-- Insumo (con autocompletado manual) -->
+    <!-- Insumo -->
     <div class="mb-3 position-relative">
       <label class="form-label fw-semibold mb-1" for="insumo">
         Insumo <span class="text-danger">*</span>
@@ -46,12 +54,14 @@
       <input type="text" class="form-control" id="insumo" name="insumo"
              placeholder="Ej. Harina, Azúcar…" required>
       <datalist id="insumoList">{% for n in insumo_names %}<option value="{{ n }}">{% endfor %}</datalist>
-      <!-- lista Bootstrap -->
-      <div id="suggestions" class="list-group position-absolute w-100 d-none shadow-sm"></div>
+
+      <!-- dropdown -->
+      <div id="suggestions" class="list-group d-none shadow-sm rounded-bottom"></div>
+
       <div class="invalid-feedback">El nombre del insumo es obligatorio.</div>
     </div>
 
-    <!-- Medida (radios) -->
+    <!-- Medida -->
     <div class="mb-3">
       <label class="form-label fw-semibold mb-1 d-block">
         Unidad <span class="text-danger">*</span>
@@ -95,8 +105,8 @@
     <!-- Notas -->
     <div class="mb-4">
       <label class="form-label fw-semibold mb-1" for="notes">Notas (opcional)</label>
-      <textarea class="form-control" id="notes" name="notes" rows="2"
-                placeholder="Detalles adicionales…"></textarea>
+      <textarea class="form-control" id="notes" name="notes"
+                rows="2" placeholder="Detalles adicionales…"></textarea>
     </div>
 
     <button class="btn btn-primary w-100 sticky-submit" type="submit">
@@ -112,72 +122,55 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 (() => {
-  const inp        = document.getElementById('insumo');
-  const list       = document.getElementById('suggestions');
-  const measureRad = () => document.querySelectorAll('input[name="measure"]');
+  const inp   = document.getElementById('insumo');
+  const menu  = document.getElementById('suggestions');
+  const radios= () => document.querySelectorAll('input[name="measure"]');
 
   /* mapa insumo → medida */
-  const raw = {{ insumos | tojson }};
-  const map = {}; Object.entries(raw).forEach(([k,v])=>{map[k.toLowerCase()] = v});
+  const raw={{ insumos | tojson }};
+  const map={}; for(const[k,v]of Object.entries(raw)){map[k.trim().toLowerCase()]=v;}
 
-  const normal = u=>{
-    const m={PZ:'pz',KG:'kg',L:'l',GR:'g',G:'g'}; return m[u?.toUpperCase()]||u?.toLowerCase()||'';
+  const normal=u=>{const m={PZ:'pz',KG:'kg',L:'l',GR:'g',G:'g'};return m[u?.toUpperCase()]||u?.toLowerCase()||'';}
+
+  const fillUnit=name=>{
+    const val=normal(map[name]);
+    if(val){ radios().forEach(r=>r.checked=(r.value===val)); }
   };
 
-  /* mostrar sugerencias */
-  const showSuggest = () => {
-    const q = inp.value.trim().toLowerCase();
-    list.innerHTML = '';
-    if(!q){ list.classList.add('d-none'); return; }
-
-    const matches = Object.keys(map)
-      .filter(n=>n.startsWith(q))
-      .slice(0,8);           /* máx 8 sugerencias */
-
-    if(!matches.length){ list.classList.add('d-none'); return; }
-
+  const show=()=>{
+    const q=inp.value.trim().toLowerCase();
+    menu.innerHTML=''; if(!q){menu.classList.add('d-none');return;}
+    const matches=Object.keys(map).filter(n=>n.startsWith(q)).slice(0,8);
+    if(!matches.length){menu.classList.add('d-none');return;}
     matches.forEach(n=>{
-      const item=document.createElement('button');
-      item.type='button';
-      item.className='list-group-item list-group-item-action';
-      item.textContent=n;
-      item.onclick=()=>{ selectInsumo(n); };
-      list.appendChild(item);
+      const btn=document.createElement('button');
+      btn.type='button';btn.className='list-group-item list-group-item-action';
+      btn.textContent=n;btn.onclick=()=>{inp.value=n;fillUnit(n);menu.classList.add('d-none');document.getElementById('quantity').focus();};
+      menu.appendChild(btn);
     });
-    list.classList.remove('d-none');
+    menu.classList.remove('d-none');
   };
 
-  const selectInsumo = (name) => {
-    inp.value = name;
-    list.classList.add('d-none');
-    /* marcar unidad */
-    const val = normal(map[name]);
-    measureRad().forEach(r=>r.checked = (r.value === val));
-    document.getElementById('quantity').focus();
-  };
-
-  inp.addEventListener('input', showSuggest);
-  inp.addEventListener('focus', showSuggest);
-  document.addEventListener('click', e=>{
-    if(!list.contains(e.target) && e.target!==inp){ list.classList.add('d-none'); }
+  inp.addEventListener('input',show);
+  inp.addEventListener('focus',show);
+  document.addEventListener('click',e=>{
+    if(!menu.contains(e.target)&&e.target!==inp){menu.classList.add('d-none');}
   });
 
-  /* envío */
-  document.getElementById('insumoForm').addEventListener('submit', async e=>{
-    e.preventDefault(); e.stopPropagation();
-    const f=e.target; f.classList.add('was-validated');
-    if(!f.checkValidity()) return;
-
+  /* submit */
+  document.getElementById('insumoForm').addEventListener('submit',async e=>{
+    e.preventDefault();e.stopPropagation();
+    const f=e.target;f.classList.add('was-validated');if(!f.checkValidity())return;
     try{
-      const res = await fetch('{{ url_for("create_insumo_request") }}',{
+      const res=await fetch('{{ url_for("create_insumo_request") }}',{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify(Object.fromEntries(new FormData(f).entries()))
       });
-      if(!res.ok) throw new Error();
-      f.reset(); f.classList.remove('was-validated');
-      document.getElementById('alertSuccess').classList.remove('d-none');
-      setTimeout(()=>document.getElementById('alertSuccess').classList.add('d-none'),4000);
-    }catch{ alert('Error al guardar'); }
+      if(!res.ok)throw new Error();
+      f.reset();f.classList.remove('was-validated');
+      const al=document.getElementById('alertSuccess');al.classList.remove('d-none');
+      setTimeout(()=>al.classList.add('d-none'),4000);
+    }catch{alert('Error al guardar');}
   });
 })();
 </script>
