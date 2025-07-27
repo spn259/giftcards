@@ -1,4 +1,3 @@
-{# templates/insumo_request.html #}
 {% extends "base.html" %}
 {% block title %}Solicitud de Insumos{% endblock %}
 
@@ -19,6 +18,10 @@
   @media(max-width:575.98px){
     .sticky-submit{position:sticky;bottom:0;left:0;right:0;z-index:10;border-radius:0}
   }
+
+  /* type-ahead list */
+  #suggestions{max-height:210px;overflow-y:auto}
+  #suggestions .list-group-item{cursor:pointer}
 </style>
 {% endblock %}
 
@@ -26,7 +29,7 @@
 <div class="container py-4 fade-page">
   <h2 class="fs-5 text-center mb-4">Solicitud de insumos</h2>
 
-  <form id="insumoForm" class="needs-validation" novalidate>
+  <form id="insumoForm" class="needs-validation" novalidate autocomplete="off">
     <input type="hidden" name="employee" value="{{ employee_name }}">
 
     <!-- Empleado -->
@@ -35,29 +38,29 @@
       <input type="text" class="form-control-plaintext" value="{{ employee_name }}" readonly>
     </div>
 
-    <!-- Insumo -->
-    <div class="mb-3">
+    <!-- Insumo (con autocompletado manual) -->
+    <div class="mb-3 position-relative">
       <label class="form-label fw-semibold mb-1" for="insumo">
         Insumo <span class="text-danger">*</span>
       </label>
       <input type="text" class="form-control" id="insumo" name="insumo"
-             list="insumoList" placeholder="Ej. Harina, Azúcar…" required autocomplete="off">
-      <datalist id="insumoList">
-        {% for nombre in insumo_names %}<option value="{{ nombre }}">{% endfor %}
-      </datalist>
+             placeholder="Ej. Harina, Azúcar…" required>
+      <datalist id="insumoList">{% for n in insumo_names %}<option value="{{ n }}">{% endfor %}</datalist>
+      <!-- lista Bootstrap -->
+      <div id="suggestions" class="list-group position-absolute w-100 d-none shadow-sm"></div>
       <div class="invalid-feedback">El nombre del insumo es obligatorio.</div>
     </div>
 
-    <!-- Medida -->
+    <!-- Medida (radios) -->
     <div class="mb-3">
       <label class="form-label fw-semibold mb-1 d-block">
         Unidad <span class="text-danger">*</span>
       </label>
       <div class="btn-group w-100" role="group">
         {% for u,lbl in [('pz','PZ'),('kg','KG'),('g','G'),('l','L'),('ml','ML')] %}
-          <input type="radio" class="btn-check" name="measure" id="measure_{{u}}"
-                 value="{{u}}" autocomplete="off" {% if loop.first %}required{% endif %}>
-          <label class="btn btn-outline-secondary btn-sm" for="measure_{{u}}">{{lbl}}</label>
+          <input type="radio" class="btn-check" name="measure" id="m_{{u}}"
+                 value="{{u}}" {% if loop.first %}required{% endif %}>
+          <label class="btn btn-outline-secondary btn-sm" for="m_{{u}}">{{lbl}}</label>
         {% endfor %}
       </div>
       <div class="invalid-feedback d-block">¿Cómo se mide este insumo?</div>
@@ -81,8 +84,8 @@
       <div class="btn-group w-100" role="group">
         {% for v,lbl in [('ahora','Ahora'),('hoy','Hoy p/ mañana'),
                          ('manana','Mañana'),('proximos_dias','Próx. días')] %}
-          <input type="radio" class="btn-check" name="urgency" id="urg_{{v}}"
-                 value="{{v}}" autocomplete="off" {% if loop.first %}required{% endif %}>
+          <input type="radio" class="btn-check" name="urgency" id="urg_{{v}}" value="{{v}}"
+                 {% if loop.first %}required{% endif %}>
           <label class="btn btn-outline-primary btn-sm" for="urg_{{v}}">{{lbl}}</label>
         {% endfor %}
       </div>
@@ -92,8 +95,8 @@
     <!-- Notas -->
     <div class="mb-4">
       <label class="form-label fw-semibold mb-1" for="notes">Notas (opcional)</label>
-      <textarea class="form-control" id="notes" name="notes"
-                rows="2" placeholder="Detalles adicionales…"></textarea>
+      <textarea class="form-control" id="notes" name="notes" rows="2"
+                placeholder="Detalles adicionales…"></textarea>
     </div>
 
     <button class="btn btn-primary w-100 sticky-submit" type="submit">
@@ -109,50 +112,72 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 (() => {
-  const form       = document.getElementById('insumoForm');
-  const alertBox   = document.getElementById('alertSuccess');
-  const insumo     = document.getElementById('insumo');
+  const inp        = document.getElementById('insumo');
+  const list       = document.getElementById('suggestions');
   const measureRad = () => document.querySelectorAll('input[name="measure"]');
 
-  /* mapa insumo → medida (case-insensitive) */
-  const map = {};
-  Object.entries({{ insumos | tojson }}).forEach(([k,v])=>{
-    map[k.trim().toLowerCase()] = v;
+  /* mapa insumo → medida */
+  const raw = {{ insumos | tojson }};
+  const map = {}; Object.entries(raw).forEach(([k,v])=>{map[k.toLowerCase()] = v});
+
+  const normal = u=>{
+    const m={PZ:'pz',KG:'kg',L:'l',GR:'g',G:'g'}; return m[u?.toUpperCase()]||u?.toLowerCase()||'';
+  };
+
+  /* mostrar sugerencias */
+  const showSuggest = () => {
+    const q = inp.value.trim().toLowerCase();
+    list.innerHTML = '';
+    if(!q){ list.classList.add('d-none'); return; }
+
+    const matches = Object.keys(map)
+      .filter(n=>n.startsWith(q))
+      .slice(0,8);           /* máx 8 sugerencias */
+
+    if(!matches.length){ list.classList.add('d-none'); return; }
+
+    matches.forEach(n=>{
+      const item=document.createElement('button');
+      item.type='button';
+      item.className='list-group-item list-group-item-action';
+      item.textContent=n;
+      item.onclick=()=>{ selectInsumo(n); };
+      list.appendChild(item);
+    });
+    list.classList.remove('d-none');
+  };
+
+  const selectInsumo = (name) => {
+    inp.value = name;
+    list.classList.add('d-none');
+    /* marcar unidad */
+    const val = normal(map[name]);
+    measureRad().forEach(r=>r.checked = (r.value === val));
+    document.getElementById('quantity').focus();
+  };
+
+  inp.addEventListener('input', showSuggest);
+  inp.addEventListener('focus', showSuggest);
+  document.addEventListener('click', e=>{
+    if(!list.contains(e.target) && e.target!==inp){ list.classList.add('d-none'); }
   });
 
-  const normalize = u=>{
-    if(!u) return '';
-    const m={PZ:'pz',KG:'kg',L:'l',GR:'g',G:'g'};
-    return m[u.toUpperCase()]||u.toLowerCase();
-  };
-
-  const autofill = ()=>{
-    const val = normalize(map[insumo.value.trim().toLowerCase()]);
-    if(val){
-      measureRad().forEach(r=>r.checked = (r.value === val));
-    }
-  };
-
-  /* Firefox Mobile: el evento relevante es 'keyup' (se dispara al tocar sugerencia);
-     mantenemos 'input' y 'change' para otros navegadores */
-  ['input','change','keyup','blur'].forEach(ev=>insumo.addEventListener(ev,autofill));
-
-  form.addEventListener('submit', async e => {
+  /* envío */
+  document.getElementById('insumoForm').addEventListener('submit', async e=>{
     e.preventDefault(); e.stopPropagation();
-    form.classList.add('was-validated');
-    if(!form.checkValidity()) return;
+    const f=e.target; f.classList.add('was-validated');
+    if(!f.checkValidity()) return;
 
-    const data = Object.fromEntries(new FormData(form).entries());
     try{
       const res = await fetch('{{ url_for("create_insumo_request") }}',{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(data)
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(Object.fromEntries(new FormData(f).entries()))
       });
-      if(!res.ok) throw new Error('Error al guardar');
-      form.reset(); form.classList.remove('was-validated');
-      alertBox.classList.remove('d-none');
-      setTimeout(()=>alertBox.classList.add('d-none'),4000);
-    }catch(err){ alert(err.message); }
+      if(!res.ok) throw new Error();
+      f.reset(); f.classList.remove('was-validated');
+      document.getElementById('alertSuccess').classList.remove('d-none');
+      setTimeout(()=>document.getElementById('alertSuccess').classList.add('d-none'),4000);
+    }catch{ alert('Error al guardar'); }
   });
 })();
 </script>
