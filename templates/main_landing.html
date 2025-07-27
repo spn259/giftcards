@@ -132,13 +132,25 @@
       </a>
     </div>
 
-    <!-- Admin Insumos (NEW) -->
+    <!-- Admin Insumos -->
     <div class="col">
       <a href="/admin/insumos" class="text-decoration-none">
         <div class="card shadow-sm h-100">
           <div class="card-body text-center">
             <h5 class="card-title mb-2">📋 Solicitudes&nbsp;Insumos</h5>
             <p class="card-text small text-muted">Crear y administrar solicitudes de insumos</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Create Insumo (NEW) -->
+    <div class="col">
+      <a href="{{ url_for('create_insumo') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">➕ Nuevo&nbsp;Insumo</h5>
+            <p class="card-text small text-muted">Añadir insumo al catálogo</p>
           </div>
         </div>
       </a>

@@ -244,3 +244,6 @@ class InsumoList(Base):
     insumo_name = Column(String, nullable=False)
     measure = Column(String, nullable=False)
     added = Column(DateTime, nullable=False)
+    created_by = Column(String)
+    area = Column(String)
+    proveedor = Column(String)

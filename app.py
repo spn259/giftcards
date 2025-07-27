@@ -1579,5 +1579,72 @@ def update_insumo_status(req_id: int):
 
     return redirect(request.referrer or url_for("insumos_admin"))
 
+
+# solo usuarios con el rol adecuado
+@username_required          # o @login_required / @admin_required
+@app.route("/insumos/create", methods=["GET", "POST"])
+def create_insumo():
+    from models import InsumoList
+    medidas = ["pz", "kg", "g", "l", "ml"]
+    areas   = ["cocina", "barra", "limpieza"]
+
+    # ------------- POST: guardar -----------------------------------------
+    if request.method == "POST":
+        name      = request.form.get("name", "").strip()
+        measure   = request.form.get("measure")
+        area      = request.form.get("area")
+        proveedor = request.form.get("proveedor", "").strip()
+
+        # validación simple
+        if not name or not measure or not area:
+            flash("Nombre, unidad y área son obligatorios.", "danger")
+            return redirect(request.url)
+
+        # evitar duplicados exactos (opcional)
+        exists = db.session.query(
+            db.exists().where(
+                (InsumoList.insumo_name.ilike(name)) &
+                (InsumoList.measure == measure)
+            )
+        ).scalar()
+
+        if exists:
+            flash("Ese insumo ya existe.", "warning")
+            next_url = request.args.get("next") or url_for("admin_insumos")
+            return redirect(next_url)
+
+        try:
+            nuevo = InsumoList(
+                insumo_name = name,
+                measure     = measure,
+                area        = area,
+                proveedor   = proveedor or None,
+                created_by  = current_user.id   # si tu modelo lo tiene
+            )
+            db.session.add(nuevo)
+            db.session.commit()
+            flash("Insumo creado exitosamente ✅", "success")
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Error al guardar: {e}", "danger")
+
+        # volver a la página previa o al admin
+        next_url = request.args.get("next") or url_for("admin_insumos")
+        return redirect(next_url)
+
+    # ------------- GET: formulario ---------------------------------------
+    prefill_name    = request.args.get("prefill", "")
+    prefill_measure = request.args.get("measure", "").lower()
+
+    return render_template(
+        "create_insumo.html",
+        medidas        = medidas,
+        areas          = areas,
+        prefill_name   = prefill_name,
+        prefill_measure= prefill_measure
+    )
+
+
+
 if local:
     app.run(debug=True, host="0.0.0.0", port=8080, threaded=True, use_reloader=True)
