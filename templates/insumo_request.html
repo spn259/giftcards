@@ -114,32 +114,29 @@
   const insumo     = document.getElementById('insumo');
   const measureRad = () => document.querySelectorAll('input[name="measure"]');
 
-  /* mapa insumo → medida (en minúsculas) */
-  const rawMap  = {{ insumos | tojson }};
-  const mapLower = {};
-  for (const [k,v] of Object.entries(rawMap)){
-    mapLower[k.toLowerCase()] = v;
-  }
+  /* mapa insumo → medida (case-insensitive) */
+  const map = {};
+  Object.entries({{ insumos | tojson }}).forEach(([k,v])=>{
+    map[k.trim().toLowerCase()] = v;
+  });
 
-  const normalize = u => {
+  const normalize = u=>{
     if(!u) return '';
-    const m = {PZ:'pz',KG:'kg',L:'l',GR:'g',G:'g'};
-    return (m[u.toUpperCase()] || u.toLowerCase());
+    const m={PZ:'pz',KG:'kg',L:'l',GR:'g',G:'g'};
+    return m[u.toUpperCase()]||u.toLowerCase();
   };
 
-  const autofill = () => {
-    const key = insumo.value.trim().toLowerCase();
-    const val = normalize(mapLower[key]);
+  const autofill = ()=>{
+    const val = normalize(map[insumo.value.trim().toLowerCase()]);
     if(val){
-      measureRad().forEach(r => r.checked = (r.value === val));
+      measureRad().forEach(r=>r.checked = (r.value === val));
     }
   };
 
-  /* Firefox: usar input + change */
-  insumo.addEventListener('input', autofill);
-  insumo.addEventListener('change', autofill);
+  /* Firefox Mobile: el evento relevante es 'keyup' (se dispara al tocar sugerencia);
+     mantenemos 'input' y 'change' para otros navegadores */
+  ['input','change','keyup','blur'].forEach(ev=>insumo.addEventListener(ev,autofill));
 
-  /* envío */
   form.addEventListener('submit', async e => {
     e.preventDefault(); e.stopPropagation();
     form.classList.add('was-validated');
