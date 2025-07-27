@@ -42,7 +42,7 @@ MX_TZ = ZoneInfo("America/Mexico_City")
 
 
 
-local = True
+local = False
 if local:
     from dotenv import load_dotenv
     from pathlib import Path
