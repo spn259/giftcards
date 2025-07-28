@@ -144,13 +144,37 @@
       </a>
     </div>
 
-    <!-- Create Insumo (NEW) -->
+    <!-- Create Insumo -->
     <div class="col">
       <a href="{{ url_for('create_insumo') }}" class="text-decoration-none">
         <div class="card shadow-sm h-100">
           <div class="card-body text-center">
             <h5 class="card-title mb-2">➕ Nuevo&nbsp;Insumo</h5>
             <p class="card-text small text-muted">Añadir insumo al catálogo</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Feedback Dashboard (NEW) -->
+    <div class="col">
+      <a href="{{ url_for('view_feedback') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">📊 Feedback</h5>
+            <p class="card-text small text-muted">Ver opiniones de clientes</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Employee Landing (NEW) -->
+    <div class="col">
+      <a href="{{ url_for('employee_landing') }}" class="text-decoration-none">
+        <div class="card shadow-sm h-100">
+          <div class="card-body text-center">
+            <h5 class="card-title mb-2">👥 Empleados</h5>
+            <p class="card-text small text-muted">Panel de empleados</p>
           </div>
         </div>
       </a>

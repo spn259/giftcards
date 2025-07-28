@@ -247,3 +247,23 @@ class InsumoList(Base):
     created_by = Column(String)
     area = Column(String)
     proveedor = Column(String)
+
+from datetime import datetime
+try:
+    # Python 3.9 + (preferred)
+    from zoneinfo import ZoneInfo          # built-in
+    MX_TZ = ZoneInfo("America/Mexico_City")
+except ImportError:
+    # Fallback for older Python versions
+    import pytz
+    MX_TZ = pytz.timezone("America/Mexico_City")
+
+class Survey(Base):
+    __tablename__ = "survey"
+    __table_args__ = {"schema": "public", "extend_existing": True}
+
+    id = Column(BigInteger, primary_key=True)
+    answers = Column(JSONB, nullable=False)
+    added   = Column(DateTime)
+    
+    

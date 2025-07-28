@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Feedback de clientes{% endblock %}
+
+{% block head %}
+<style>
+  /* Softer cell-wide backgrounds with readable text */
+  .rate-1   { background:#f8d7da; color:#842029; }   /* rojo claro   */
+  .rate-2   { background:#fff3cd; color:#664d03; }   /* amarillo claro */
+  .rate-3   { background:#d1e7dd; color:#0f5132; }   /* verde claro  */
+
+  /* Optional: bigger / centered text */
+  td.rate-1, td.rate-2, td.rate-3 {
+    font-weight: 600;
+    text-align:center;
+    vertical-align: middle;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4 fade-page">
+  <h2 class="mb-4 fw-bold">Feedback reciente</h2>
+
+  {% if surveys %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th scope="col">Fecha (MX)</th>
+          <th scope="col">Comida</th>
+          <th scope="col">Servicio</th>
+          <th scope="col">Limpieza</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in surveys %}
+          {% set a = s.answers %}
+          <tr>
+            <td>{{ s.added }}</td>
+
+            {% for field in ["comida","servicio","limpieza"] %}
+              {% set val = a[field]|int %}
+              <td class="rate-{{val}}">
+                {{ val }}            {# could swap for 😊😐😞 etc. #}
+              </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="text-muted">Aún no hay respuestas.</p>
+  {% endif %}
+</div>
+{% endblock %}

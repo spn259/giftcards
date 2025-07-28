@@ -1691,5 +1691,147 @@ def view_insumos():
 
     return render_template("insumos_table.html", insumos=insumos)
 
+
+import requests
+from datetime import datetime
+try:
+    from zoneinfo import ZoneInfo
+    MX_TZ = ZoneInfo("America/Mexico_City")
+except ImportError:
+    import pytz
+    MX_TZ = pytz.timezone("America/Mexico_City")
+
+
+def send_survey_ntfy(survey_row):
+    """
+    Push a Survey row to ntfy.sh/adc-alerts-feedback.
+    Works on any Python 3.x without unicode-header issues.
+    """
+    a = survey_row.answers
+    worst = min(a.values())     # 1 bad · 3 good
+
+    # ── Title (ASCII-only) ───────────────────────────────
+    title_map = {1: "Nuevo feedback (Malo)",
+                 2: "Nuevo feedback (Regular)",
+                 3: "Nuevo feedback (Bueno)"}
+    title = f"{title_map[worst]} - ID {survey_row.id}"
+
+    # ── Body (can contain emoji freely) ─────────────────
+    face_map = {1: "❌", 2: "⚠️", 3: "✅"}
+    fmt_val = lambda v: f"{v} {face_map[v]}"
+    body_lines = [
+        f"Comida   : {fmt_val(a['comida'])}",
+        f"Servicio : {fmt_val(a['servicio'])}",
+        f"Limpieza : {fmt_val(a['limpieza'])}",
+        "",
+        "Hora local: " + survey_row.added.astimezone(MX_TZ).strftime("%Y-%m-%d %H:%M")
+    ]
+    body = "\n".join(body_lines)
+
+    # ── Priority ────────────────────────────────────────
+    priority = "5" if worst == 1 else "4" if worst == 2 else "3"
+
+    # ── POST ────────────────────────────────────────────
+    requests.post(
+        "https://ntfy.sh/adc-alerts-feedback",
+        data=body.encode("utf-8"),
+        headers={
+            "Title"       : title,          # ASCII → always safe
+            "Priority"    : priority,
+            "Click"       : "https://lionfish-app-zpcxb.ondigitalocean.app/survey/feedback",
+            "Content-Type": "text/plain; charset=utf-8"
+        },
+        timeout=5
+    )
+
+
+@app.route("/feedback", methods=["GET", "POST"])
+def feedback():
+    return render_template('feedback.html')
+
+@app.route("/survey/submit", methods=["POST"])
+def submit_survey():
+    from models import Survey
+    """
+    Accepts JSON like:
+      {
+        "comida":   1|2|3,
+        "servicio": 1|2|3,
+        "limpieza": 1|2|3
+      }
+    Stores it in public.survey and returns the new row ID.
+    """
+
+    # 1. Parse and validate ---------------------------------------------------
+    payload = request.get_json(silent=True) or {}
+    expected_keys = {"comida", "servicio", "limpieza"}
+
+    # Check missing fields
+    if not expected_keys.issubset(payload):
+        missing = expected_keys - payload.keys()
+        abort(400, f"Faltan campos: {', '.join(missing)}")
+
+    # Ensure each value is an int 1–3
+    try:
+        answers = {k: int(payload[k]) for k in expected_keys}
+        if not all(v in (1, 2, 3) for v in answers.values()):
+            raise ValueError
+    except (ValueError, TypeError):
+        abort(400, "Los valores deben ser 1, 2 o 3.")
+
+    # 2. Insert into DB -------------------------------------------------------
+    try:
+        row = Survey(answers=answers, added=datetime.now())   # added timestamp handled by default
+        db.session.add(row)
+        db.session.commit()
+        send_survey_ntfy(row)
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        current_app.logger.error(f"[survey] DB error: {e}")
+        abort(500, "Error al guardar la encuesta.")
+
+    # 3. Success --------------------------------------------------------------
+    return jsonify({"status": "ok", "id": row.id}), 201
+
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
+
+@event.listens_for(Engine, "connect")
+def set_mx_timezone(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("SET TIME ZONE 'America/Mexico_City'")
+    cursor.close()
+
+import requests
+from datetime import datetime
+try:
+    from zoneinfo import ZoneInfo
+    MX_TZ = ZoneInfo("America/Mexico_City")
+except ImportError:
+    import pytz
+    MX_TZ = pytz.timezone("America/Mexico_City")
+
+from sqlalchemy import func
+
+@app.route("/survey/feedback", methods=["GET"])
+def view_feedback():
+    from models import Survey
+    """
+    Fetches all surveys and converts the timestamptz column to
+    America/Mexico_City right in the SELECT.
+    """
+    rows = (
+        db.session.query(
+            Survey.id,
+            Survey.answers,
+             Survey.added)
+        .order_by(Survey.added.desc())
+        .all()
+    )
+
+    return render_template("survey_feedback.html", surveys=rows)
+
+
+
 if local:
     app.run(debug=True, host="0.0.0.0", port=8080, threaded=True, use_reloader=True)
