@@ -1007,13 +1007,8 @@ def expenses_dashboard():
         end_date=end_dt.date().isoformat(),
     )
 
-def clean_key(raw: str) -> str:
-    raw = raw.strip().lstrip("/")
-    if (raw.startswith('"') and raw.endswith('"')) or (
-        raw.startswith("'") and raw.endswith("'")
-    ):
-        raw = raw[1:-1]
-    return raw
+
+
 
 @app.route("/expense/<int:expense_id>/receipt/<int:index>")
 def expense_receipt(expense_id: int, index: int):
@@ -1747,6 +1742,15 @@ def send_survey_ntfy(survey_row):
         timeout=5
     )
 
+def _clean_key(raw: str) -> str:
+    """
+    Ensure the key does NOT start with a slash or with the bucket name.
+    """
+    key = raw.lstrip("/")                     # kill leading slash
+    prefix = f"{spaces_bucket_name}/"
+    if key.startswith(prefix):
+        key = key[len(prefix):]               # strip duplicated bucket
+    return key
 
 @app.route("/feedback", methods=["GET", "POST"])
 def feedback():
@@ -1754,94 +1758,130 @@ def feedback():
 
 @app.route("/survey/submit", methods=["POST"])
 def submit_survey():
+    """
+    Expects JSON:
+        {
+          "comida": 1|2|3,
+          "servicio": …,
+          "limpieza": …,
+          "photo_base64": "data:image/png;base64,AAAA…"
+        }
+    """
+
+    import uuid, io, base64, mimetypes
+    from flask import request, jsonify, abort
+    from sqlalchemy.exc import SQLAlchemyError
     from models import Survey
-    """
-    Accepts JSON like:
-      {
-        "comida":   1|2|3,
-        "servicio": 1|2|3,
-        "limpieza": 1|2|3
-      }
-    Stores it in public.survey and returns the new row ID.
-    """
 
-    # 1. Parse and validate ---------------------------------------------------
-    payload = request.get_json(silent=True) or {}
-    expected_keys = {"comida", "servicio", "limpieza"}
+    data = request.get_json(silent=True) or {}
+    photo_b64 = data.pop("photo_base64", None)         # strip out the image
+    expected = {"comida", "servicio", "limpieza"}
 
-    # Check missing fields
-    if not expected_keys.issubset(payload):
-        missing = expected_keys - payload.keys()
-        abort(400, f"Faltan campos: {', '.join(missing)}")
-
-    # Ensure each value is an int 1–3
+    # --- basic validation ---------------------------------------------------
+    if not expected.issubset(data):
+        abort(400, "Campos incompletos.")
     try:
-        answers = {k: int(payload[k]) for k in expected_keys}
-        if not all(v in (1, 2, 3) for v in answers.values()):
-            raise ValueError
-    except (ValueError, TypeError):
-        abort(400, "Los valores deben ser 1, 2 o 3.")
+        answers = {k: int(data[k]) for k in expected}
+    except (TypeError, ValueError):
+        abort(400, "Valores inválidos.")
 
-    # from datetime import datetime
-    # try:
-    #     from zoneinfo import ZoneInfo          # Python 3.9+
-    #     MX_TZ = ZoneInfo("America/Mexico_City")
-    # except ImportError:
-    #     import pytz                            # fallback for 3.8 or lower
-    #     MX_TZ = pytz.timezone("America/Mexico_City")
+    # --- upload snapshot, if any -------------------------------------------
+    if photo_b64:
+        try:
+            header, b64 = photo_b64.split(",", 1)
+            mime = header.split(":")[1].split(";")[0]           # e.g. image/png
+            ext  = mimetypes.guess_extension(mime) or ".png"
+            # key  = f"survey_photos/{uuid.uuid4()}{ext}"
+            key = _clean_key(f"survey_photos/{uuid.uuid4()}{ext}")
+            file_bytes = base64.b64decode(b64)                  # ← decode here
 
-    row = Survey(
-        answers = answers 
-    )
-    db.session.add(row)
-    db.session.commit()
-    # send_survey_ntfy(row)
-    # 3. Success --------------------------------------------------------------
-    return jsonify({"status": "ok", "id": row.id}), 201
+            _spaces.upload_fileobj(
+                io.BytesIO(file_bytes),
+                spaces_bucket_name,                             # e.g. "recibos"
+                key,
+                ExtraArgs={"ContentType": mime, "ACL": "private"}
+            )
+            answers["photo_key"] = key
+        except Exception as e:
+            app.logger.error(f"Upload snapshot failed: {e}")
 
-from sqlalchemy import event
-from sqlalchemy.engine import Engine
+    # --- save survey --------------------------------------------------------
+    try:
+        row = Survey(answers=answers)                  # server_default NOW()
+        db.session.add(row)
+        db.session.commit()
+        # send_survey_ntfy(row)
+        return jsonify({"status": "ok", "id": row.id}), 201
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        abort(500, "Error al guardar la encuesta.")
 
-# @event.listens_for(Engine, "connect")
-# def set_mx_timezone(dbapi_connection, connection_record):
-#     cursor = dbapi_connection.cursor()
-#     cursor.execute("SET TIME ZONE 'America/Mexico_City'")
-#     cursor.close()
 
-import requests
-from datetime import datetime
-try:
-    from zoneinfo import ZoneInfo
-    MX_TZ = ZoneInfo("America/Mexico_City")
-except ImportError:
-    import pytz
-    MX_TZ = pytz.timezone("America/Mexico_City")
+        # your helper
 
+# 1-hour links are plenty for a dashboard refresh
+URL_TTL_SEC = 3600
+
+
+from flask import render_template, url_for
 from sqlalchemy import func
 
 @app.route("/survey/feedback", methods=["GET"])
 def view_feedback():
-    """
-    Fetches all surveys and converts the timestamptz column to
-    America/Mexico_City right in the SELECT.
-    """
     from models import Survey
-    from sqlalchemy import func
-
     rows = (
-    db.session.query(
-        Survey.id,
-        Survey.answers,
-        Survey.added
-    )
-    .order_by(Survey.added.desc())
-    .all()
+        db.session.query(Survey.id, Survey.answers, Survey.added)
+                  .order_by(Survey.added.desc())
+                  .all()
     )
 
+    enriched = []
+    for r in rows:
+        d = dict(id=r.id, answers=r.answers, added=r.added)
+        key = r.answers.get("photo_key")
+        d["photo_url"] = (
+            url_for("survey_photo", survey_id=r.id) if key else None
+        )
+        enriched.append(d)
+
+    return render_template("survey_feedback.html", surveys=enriched)
 
 
-    return render_template("survey_feedback.html", surveys=rows)
+# utils/storage.py  (or wherever you keep helpers)
+def clean_key(raw: str) -> str:
+    """Strip leading slash and duplicated bucket prefix."""
+    key = raw.lstrip("/")
+    prefix = f"{spaces_bucket_name}/"
+    if key.startswith(prefix):
+        key = key[len(prefix):]
+    return key
 
+
+@app.route("/survey/<int:survey_id>/photo")
+def survey_photo(survey_id: int):
+    from models import Survey
+    print("HR")
+    """Stream the snapshot attached to a survey row."""
+    row = db.session.get(Survey, survey_id) or abort(404)
+    key = clean_key(row.answers.get("photo_key", "")) or abort(404)
+
+    # fetch from Spaces
+    try:
+        obj = _spaces.get_object(Bucket=spaces_bucket_name, Key=key)
+    except _spaces.exceptions.NoSuchKey:
+        abort(404)
+
+    # mime type by extension
+    ext  = os.path.splitext(key)[1].lower()
+    mime = mimetypes.guess_type(key)[0] or "application/octet-stream"
+
+    headers = {
+        "Content-Type": mime,
+        "Content-Disposition": f'inline; filename="{os.path.basename(key)}"',
+        "Content-Length": obj["ContentLength"]
+    }
+    body_iter = stream_with_context(obj["Body"].iter_chunks())
+    return Response(body_iter, headers=headers)
 
 
 if local:

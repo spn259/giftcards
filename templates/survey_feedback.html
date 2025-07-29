@@ -4,15 +4,12 @@
 {% block head %}
 <style>
   /* Softer cell-wide backgrounds with readable text */
-  .rate-1   { background:#f8d7da; color:#842029; }   /* rojo claro   */
-  .rate-2   { background:#fff3cd; color:#664d03; }   /* amarillo claro */
-  .rate-3   { background:#d1e7dd; color:#0f5132; }   /* verde claro  */
+  .rate-1   { background:#f8d7da; color:#842029; }
+  .rate-2   { background:#fff3cd; color:#664d03; }
+  .rate-3   { background:#d1e7dd; color:#0f5132; }
 
-  /* Optional: bigger / centered text */
   td.rate-1, td.rate-2, td.rate-3 {
-    font-weight: 600;
-    text-align:center;
-    vertical-align: middle;
+    font-weight:600; text-align:center; vertical-align:middle;
   }
 </style>
 {% endblock %}
@@ -26,10 +23,11 @@
     <table class="table table-hover align-middle">
       <thead class="table-light">
         <tr>
-          <th scope="col">Fecha (MX)</th>
+          <th scope="col">Fecha&nbsp;(MX)</th>
           <th scope="col">Comida</th>
           <th scope="col">Servicio</th>
           <th scope="col">Limpieza</th>
+          <th scope="col">Foto</th>
         </tr>
       </thead>
       <tbody>
@@ -40,10 +38,23 @@
 
             {% for field in ["comida","servicio","limpieza"] %}
               {% set val = a[field]|int %}
-              <td class="rate-{{val}}">
-                {{ val }}            {# could swap for 😊😐😞 etc. #}
-              </td>
+              <td class="rate-{{val}}">{{ val }}</td>
             {% endfor %}
+
+            <td>
+             {% if s.photo_url %}
+  <button class="btn btn-sm btn-outline-secondary"
+          data-bs-toggle="collapse"
+          data-bs-target="#img{{s.id}}">
+    Ver foto
+  </button>
+  <div class="collapse mt-2" id="img{{s.id}}">
+    <img src="{{ s.photo_url }}" class="img-fluid border rounded mt-2">
+  </div>
+{% else %}
+                —
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
       </tbody>
