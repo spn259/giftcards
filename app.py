@@ -240,7 +240,8 @@ def main_landing():
     return render_template("main_landing.html")
 
 @app.route("/employee_landing", methods=["GET", "POST"])
-@employee_required                      # <─ now Flask wraps it too
+@employee_required
+@username_required          # o @login_required / @admin_required                      # <─ now Flask wraps it too
 def employee_landing():
     return render_template("employee_landing.html")
 
@@ -1426,7 +1427,10 @@ def cash_count_register_detail(username, added_iso):
 @app.route("/insumos/request_form", methods=["GET"])
 def insumo_form():
     from models import InsumoList
-    employee_name = current_user.name
+    try:
+        employee_name = current_user.name
+    except:
+        return redirect(url_for("employee_login"))
 
     # ── consulta ───────────────────────────────────────────────────────────
     # Devuelve dict { "Harina": "KG", ... }  y lista ordenada de nombres
@@ -1779,28 +1783,32 @@ def submit_survey():
     except (ValueError, TypeError):
         abort(400, "Los valores deben ser 1, 2 o 3.")
 
-    # 2. Insert into DB -------------------------------------------------------
-    try:
-        row = Survey(answers=answers, added=datetime.now())   # added timestamp handled by default
-        db.session.add(row)
-        db.session.commit()
-        send_survey_ntfy(row)
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        current_app.logger.error(f"[survey] DB error: {e}")
-        abort(500, "Error al guardar la encuesta.")
+    # from datetime import datetime
+    # try:
+    #     from zoneinfo import ZoneInfo          # Python 3.9+
+    #     MX_TZ = ZoneInfo("America/Mexico_City")
+    # except ImportError:
+    #     import pytz                            # fallback for 3.8 or lower
+    #     MX_TZ = pytz.timezone("America/Mexico_City")
 
+    row = Survey(
+        answers = answers 
+    )
+    print(row.added)
+    db.session.add(row)
+    db.session.commit()
+    # send_survey_ntfy(row)
     # 3. Success --------------------------------------------------------------
     return jsonify({"status": "ok", "id": row.id}), 201
 
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 
-@event.listens_for(Engine, "connect")
-def set_mx_timezone(dbapi_connection, connection_record):
-    cursor = dbapi_connection.cursor()
-    cursor.execute("SET TIME ZONE 'America/Mexico_City'")
-    cursor.close()
+# @event.listens_for(Engine, "connect")
+# def set_mx_timezone(dbapi_connection, connection_record):
+#     cursor = dbapi_connection.cursor()
+#     cursor.execute("SET TIME ZONE 'America/Mexico_City'")
+#     cursor.close()
 
 import requests
 from datetime import datetime
@@ -1815,19 +1823,24 @@ from sqlalchemy import func
 
 @app.route("/survey/feedback", methods=["GET"])
 def view_feedback():
-    from models import Survey
     """
     Fetches all surveys and converts the timestamptz column to
     America/Mexico_City right in the SELECT.
     """
+    from models import Survey
+    from sqlalchemy import func
+
     rows = (
-        db.session.query(
-            Survey.id,
-            Survey.answers,
-             Survey.added)
-        .order_by(Survey.added.desc())
-        .all()
+    db.session.query(
+        Survey.id,
+        Survey.answers,
+        Survey.added
     )
+    .order_by(Survey.added.desc())
+    .all()
+    )
+
+
 
     return render_template("survey_feedback.html", surveys=rows)
 

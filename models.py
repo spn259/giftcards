@@ -260,10 +260,14 @@ except ImportError:
 
 class Survey(Base):
     __tablename__ = "survey"
-    __table_args__ = {"schema": "public", "extend_existing": True}
+    __table_args__ = {"schema": "public"}
 
     id = Column(BigInteger, primary_key=True)
     answers = Column(JSONB, nullable=False)
-    added   = Column(DateTime)
+    added   = Column(
+            DateTime(timezone=False),                          # <-- no tz
+            server_default=text("timezone('America/Mexico_City', now())::timestamp"),
+            nullable=False
+        )
     
     
