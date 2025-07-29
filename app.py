@@ -1810,7 +1810,7 @@ def submit_survey():
         row = Survey(answers=answers)                  # server_default NOW()
         db.session.add(row)
         db.session.commit()
-        # send_survey_ntfy(row)
+        send_survey_ntfy(row)
         return jsonify({"status": "ok", "id": row.id}), 201
     except SQLAlchemyError as e:
         db.session.rollback()
