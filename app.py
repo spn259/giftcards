@@ -1658,8 +1658,7 @@ def create_insumo():
                 insumo_name = name.upper(),
                 measure     = measure,
                 area        = area,
-                proveedor   = proveedor or None,
-                added = datetime.utcnow()   # si tu modelo lo tiene
+                proveedor   = proveedor or None
 
             )
             db.session.add(nuevo)
@@ -1794,7 +1793,6 @@ def submit_survey():
     row = Survey(
         answers = answers 
     )
-    print(row.added)
     db.session.add(row)
     db.session.commit()
     # send_survey_ntfy(row)

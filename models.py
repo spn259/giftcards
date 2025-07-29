@@ -229,11 +229,10 @@ class InsumoRequest(Base):
 
     # ──────────────── TIMEZONE-AWARE «added» ──────────────────
     created_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(MX_TZ),                       # Python side
-        server_default=text("timezone('America/Mexico_City', now())"),  # DB side
-        nullable=False,
-    )
+            DateTime(timezone=False),                          # <-- no tz
+            server_default=text("timezone('America/Mexico_City', now())::timestamp"),
+            nullable=False
+        )
     # ───────────────────────────────────────────────────────────
 
 class InsumoList(Base):
