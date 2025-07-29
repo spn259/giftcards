@@ -87,7 +87,7 @@
         Urgencia <span class="text-danger">*</span>
       </label>
       <div class="btn-group w-100" role="group">
-        {% for v,lbl in [('ahora mismo','Ahora mismo'),('hoy','Hoy p/ mañana'),
+        {% for v,lbl in [('hoy','Hoy p/ mañana'),
                          ('manana','Mañana'),('proximos_dias','Próx. días')] %}
           <input type="radio" class="btn-check" name="urgency" id="urg_{{v}}" value="{{v}}"
                  {% if loop.first %}required{% endif %}>

