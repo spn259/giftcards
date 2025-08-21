@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sugiere un lugar para el food truck</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; color: #111; }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 1.25rem; margin: 12px 0 16px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .map-wrap { position: relative; height: 56vh; min-height: 360px; }
+    #map { position: absolute; inset: 0; }
+    #pac-input { position: absolute; top: 12px; left: 12px; width: min(520px, calc(100% - 24px)); padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; z-index: 2; }
+    .foot { padding: 16px; display: grid; gap: 12px; grid-template-columns: 1fr auto; align-items: center; }
+    .row { display: grid; gap: 12px; grid-template-columns: 1.2fr 1fr; }
+    label { font-size: .88rem; color: #374151; }
+    input[type="email"] { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; }
+    .subtle { font-size: .8rem; color: #6b7280; }
+    .error { background: #fef2f2; color: #7f1d1d; border: 1px solid #fecaca; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; }
+    button { border: none; border-radius: 10px; padding: 12px 16px; font-weight: 600; cursor: pointer; }
+    .btn-primary { background: #111827; color: #fff; }
+    .btn-primary[disabled] { opacity: .45; cursor: not-allowed; }
+    .bar { padding: 12px 0 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .link { color: #2563eb; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="bar">
+      <h1>Sugiere un lugar para nuestro food truck 🚚</h1>
+      <a class="link" href="{{ next_url }}">Omitir</a>
+    </div>
+
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form id="survey-form" method="POST" action="{{ url_for('survey_location') }}?next={{ next_url|urlencode }}">
+      <div class="card">
+        <div class="map-wrap">
+          <input id="pac-input" type="text" placeholder="Buscar un lugar o dirección…" aria-label="Buscar un lugar" />
+          <div id="map" role="application" aria-label="Selecciona una ubicación en el mapa"></div>
+        </div>
+        <div class="foot">
+          <div class="row">
+            <div>
+              <label for="email">Correo electrónico (para avisarte cuando estemos cerca)</label>
+              <input id="email" name="email" type="email" inputmode="email" autocomplete="email" required />
+              <div class="subtle">Nunca compartiremos tu correo. Solo se usará para esta encuesta.</div>
+            </div>
+            <div class="subtle">
+              <div><strong>Ubicación elegida:</strong> <span id="picked-label">Aún no</span></div>
+              <div id="addr-label"></div>
+            </div>
+          </div>
+
+          <div style="text-align:right;">
+            <button type="submit" id="submit-btn" class="btn-primary" disabled>Enviar sugerencia</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Campos ocultos que rellena el mapa -->
+      <input type="hidden" name="lat" id="lat" />
+      <input type="hidden" name="lng" id="lng" />
+      <input type="hidden" name="address" id="address" />
+      <input type="hidden" name="place_id" id="place_id" />
+      <input type="hidden" name="next" value="{{ next_url }}" />
+    </form>
+  </div>
+
+  <script>
+    // Pines "candidatos" opcionales que puedes pasar desde Flask; al hacer clic se seleccionan.
+    const CANDIDATE_PINS = {{ (candidate_pins or []) | tojson | safe }};
+
+    let map, marker, autocomplete;
+
+    function setMarker(lat, lng, opts = {}) {
+      const pos = { lat: Number(lat), lng: Number(lng) };
+      if (!marker) {
+        marker = new google.maps.Marker({ map, position: pos, draggable: false });
+      } else {
+        marker.setPosition(pos);
+      }
+      map.panTo(pos);
+      // Actualiza los campos ocultos
+      document.getElementById('lat').value = pos.lat.toFixed(6);
+      document.getElementById('lng').value = pos.lng.toFixed(6);
+      if (opts.address !== undefined) {
+        document.getElementById('address').value = opts.address || '';
+      }
+      if (opts.place_id !== undefined) {
+        document.getElementById('place_id').value = opts.place_id || '';
+      }
+      document.getElementById('picked-label').textContent = pos.lat.toFixed(5) + ", " + pos.lng.toFixed(5);
+      document.getElementById('addr-label').textContent = (opts.address || '') ? "📍 " + opts.address : "";
+      // Habilita el envío cuando ya se eligió un punto
+      document.getElementById('submit-btn').disabled = false;
+    }
+
+    function initMap() {
+      const defaultCenter = { lat: 19.4326, lng: -99.1332 }; // Predeterminado: CDMX; intentaremos geolocalizar abajo
+
+      map = new google.maps.Map(document.getElementById('map'), {
+        center: defaultCenter,
+        zoom: 12,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false
+      });
+
+      // Cuadro de búsqueda de lugares
+      const input = document.getElementById('pac-input');
+      autocomplete = new google.maps.places.Autocomplete(input, {
+        fields: ["geometry", "name", "place_id", "formatted_address"]
+      });
+      autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+        if (!place || !place.geometry || !place.geometry.location) {
+          alert("No pudimos obtener detalles de ese lugar; inténtalo de nuevo.");
+          return;
+        }
+        const loc = place.geometry.location;
+        const address = place.formatted_address || place.name || "";
+        setMarker(loc.lat(), loc.lng(), { address, place_id: place.place_id || "" });
+        map.setZoom(15);
+      });
+
+      // Un clic en cualquier parte selecciona ese punto
+      map.addListener("click", (e) => {
+        setMarker(e.latLng.lat(), e.latLng.lng(), { address: "", place_id: "" });
+      });
+
+      // Pines candidatos opcionales para tocar
+      if (Array.isArray(CANDIDATE_PINS)) {
+        CANDIDATE_PINS.forEach(p => {
+          const m = new google.maps.Marker({
+            map,
+            position: { lat: p.lat, lng: p.lng },
+            title: p.name || "Punto sugerido",
+            icon: { url: "https://maps.google.com/mapfiles/ms/icons/green-dot.png" }
+          });
+          m.addListener("click", () => {
+            setMarker(p.lat, p.lng, { address: p.name || "", place_id: "" });
+            map.setZoom(15);
+          });
+        });
+      }
+
+      // Intentar centrar en la ubicación del usuario por conveniencia
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const here = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            map.setCenter(here);
+            map.setZoom(13);
+          },
+          () => { /* ignorar */ },
+          { enableHighAccuracy: false, timeout: 4000, maximumAge: 600000 }
+        );
+      }
+
+      // Evita que la tecla Enter en la búsqueda envíe el formulario
+      input.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") ev.preventDefault();
+      });
+    }
+
+    // Exponer para el callback
+    window.initMap = initMap;
+  </script>
+  <!-- Forzar la interfaz de Google Maps en español; sesgo regional para México -->
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=places&language=es&region=MX&callback=initMap"></script>
+</body>
+</html>

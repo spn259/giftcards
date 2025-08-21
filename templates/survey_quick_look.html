@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Vista rápida · Sugerencias de ubicación</title>
+
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+    .grid-2 { display: grid; grid-template-columns: 1.4fr .9fr; gap: 16px; }
+    @media (max-width: 992px){ .grid-2 { grid-template-columns: 1fr; } }
+
+    .card { border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    #map { height: 64vh; min-height: 420px; border-radius: 12px; }
+    .stat { padding: 12px 14px; border:1px solid #e5e7eb; border-radius:12px; background:#fff; }
+    .mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .list-condensed li { margin-bottom: .35rem; }
+    .badge-soft { background: #f3f4f6; color:#111; }
+    .toolbar .form-control, .toolbar .form-select { height: 42px; }
+    .navbar-brand img { height: 28px; vertical-align: middle; }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg bg-white border-bottom sticky-top">
+    <div class="container">
+      <a class="navbar-brand fw-semibold" href="/">🚚 Food Truck</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav"
+              aria-controls="mainNav" aria-expanded="false" aria-label="Alternar navegación">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div id="mainNav" class="collapse navbar-collapse">
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('survey_location') }}">Sugerir lugar</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" aria-current="page" href="{{ url_for('survey_quick_look') }}">Vista rápida</a>
+          </li>
+          <!-- Agrega más enlaces si quieres -->
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Page -->
+  <div class="wrap">
+    <div class="d-flex justify-content-between flex-wrap align-items-end mb-3">
+      <div>
+        <h1 class="h5 fw-bold mb-1">Vista rápida: Sugerencias de ubicación</h1>
+        <div class="text-muted small">Analiza los puntos sugeridos por tus seguidores.</div>
+      </div>
+      <div class="toolbar d-flex gap-2">
+        <form class="d-flex flex-wrap gap-2" method="get" action="{{ url_for('survey_quick_look') }}">
+          <div>
+            <label class="form-label small mb-1">Inicio</label>
+            <input class="form-control" type="date" name="start" value="{{ start_value }}">
+          </div>
+          <div>
+            <label class="form-label small mb-1">Fin</label>
+            <input class="form-control" type="date" name="end" value="{{ end_value }}">
+          </div>
+          <div class="form-check align-self-end mb-1">
+            <input class="form-check-input" type="checkbox" id="dedup" name="dedup" value="1" {% if dedup %}checked{% endif %}>
+            <label class="form-check-label small" for="dedup">Un correo = un voto</label>
+          </div>
+          <button class="btn btn-dark align-self-end">Aplicar</button>
+          <a class="btn btn-outline-secondary align-self-end"
+             href="{{ url_for('survey_quick_look_export', start=start_value, end=end_value, dedup=1 if dedup else 0) }}">
+            Descargar CSV
+          </a>
+        </form>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Mapa -->
+      <div class="card p-2">
+        <div id="map" aria-label="Mapa de sugerencias"></div>
+      </div>
+
+      <!-- Panel derecho -->
+      <div class="d-flex flex-column gap-3">
+        <div class="stat">
+          <div class="d-flex justify-content-between">
+            <div>
+              <div class="text-muted small">Total de puntos</div>
+              <div class="h4 mono mb-0">{{ total_points }}</div>
+            </div>
+            <div>
+              <div class="text-muted small">Correos únicos</div>
+              <div class="h4 mono mb-0">{{ unique_emails }}</div>
+            </div>
+          </div>
+          <hr class="my-3">
+          <div class="small text-muted">
+            Rango: <span class="badge badge-soft">{{ start_value }}</span>
+            — <span class="badge badge-soft">{{ end_value }}</span>
+            {% if last_added_iso %}
+              <br>Último registro: <span class="mono">{{ last_added_iso }}</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="stat">
+          <div class="fw-semibold mb-2">Zonas con más votos (≈100–150 m)</div>
+          <ol id="topBuckets" class="list-condensed ps-3 mb-0 small"></ol>
+        </div>
+
+        <div class="stat">
+          <div class="fw-semibold mb-2">Últimos 10 registros</div>
+          <ul id="recentList" class="list-condensed ps-3 mb-0 small"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Datos del servidor (Jinja)
+    const SUGGESTIONS = {{ suggestions | tojson | safe }};
+  </script>
+
+  <!-- Marker clustering (paquete oficial).
+       Nota: si por alguna razón no carga, abajo hay un fallback para mostrar marcadores igual. -->
+  <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js" defer></script>
+
+  <script>
+    let map;
+
+    function initMap(){
+      const center = (Array.isArray(SUGGESTIONS) && SUGGESTIONS.length)
+        ? { lat: SUGGESTIONS[0].lat, lng: SUGGESTIONS[0].lng }
+        : { lat: 19.4326, lng: -99.1332 }; // CDMX
+
+      map = new google.maps.Map(document.getElementById('map'), {
+        center, zoom: (SUGGESTIONS && SUGGESTIONS.length) ? 12 : 11,
+        streetViewControl:false, mapTypeControl:false, fullscreenControl:false
+      });
+
+      // Crear marcadores (sin asignarlos al mapa por ahora)
+      const markers = (SUGGESTIONS || []).map((r) => {
+        const m = new google.maps.Marker({
+          position: {lat: r.lat, lng: r.lng},
+          title: r.address || (r.lat.toFixed(5)+", "+r.lng.toFixed(5)),
+        });
+        const html = `
+          <div style="min-width:220px">
+            <div class="fw-semibold">${r.address || 'Sin dirección'}</div>
+            <div class="text-muted small">${r.lat.toFixed(5)}, ${r.lng.toFixed(5)}</div>
+            <div class="small mt-1"><span class="text-muted">Email:</span> ${r.email}</div>
+            <div class="small text-muted">${new Date(r.created_at).toLocaleString('es-MX')}</div>
+          </div>`;
+        const iw = new google.maps.InfoWindow({content: html});
+        m.addListener('click', () => iw.open({anchor: m, map}));
+        return m;
+      });
+
+      // Ajustar límites si hay marcadores
+      if (markers.length) {
+        const bounds = new google.maps.LatLngBounds();
+        markers.forEach(m => bounds.extend(m.getPosition()));
+        if (!bounds.isEmpty()) map.fitBounds(bounds);
+      }
+
+      // Usar clusterer si está disponible; si no, pintar marcadores manualmente
+      const hasClusterer = !!(window.markerClusterer && markerClusterer.MarkerClusterer);
+      if (markers.length) {
+        if (hasClusterer) {
+          new markerClusterer.MarkerClusterer({ map, markers });
+        } else {
+          markers.forEach(m => m.setMap(map)); // fallback si no carga el clusterer
+        }
+      }
+
+      buildTopBuckets(SUGGESTIONS || []);
+      buildRecent(SUGGESTIONS || []);
+    }
+
+    function buildTopBuckets(rows){
+      // Agrupar por ~0.001° (≈111 m latitud)
+      const key = (lat, lng) => `${lat.toFixed(3)},${lng.toFixed(3)}`;
+      const buckets = new Map();
+      rows.forEach(r => {
+        const k = key(r.lat, r.lng);
+        if (!buckets.has(k)) buckets.set(k, {count:0, sample:r});
+        buckets.get(k).count++;
+      });
+
+      const top = Array.from(buckets.entries())
+        .sort((a,b)=>b[1].count - a[1].count)
+        .slice(0, 10);
+
+      const ol = document.getElementById('topBuckets');
+      ol.innerHTML = '';
+      top.forEach(([k, v]) => {
+        const li = document.createElement('li');
+        const addr = v.sample.address || k;
+        li.innerHTML = `<span class="mono me-2 badge badge-soft">${v.count}</span>${addr}`;
+        li.style.cursor = 'pointer';
+        li.onclick = () => {
+          const [lat, lng] = k.split(',').map(Number);
+          map.setZoom(16);
+          map.panTo({lat, lng});
+        };
+        ol.appendChild(li);
+      });
+
+      if (!top.length){
+        ol.innerHTML = '<li class="text-muted">Sin datos en el rango seleccionado.</li>';
+      }
+    }
+
+    function buildRecent(rows){
+      const ul = document.getElementById('recentList');
+      ul.innerHTML = '';
+      rows.slice(0, 10).forEach(r => {
+        const li = document.createElement('li');
+        const when = new Date(r.created_at).toLocaleString('es-MX');
+        const label = r.address || `${r.lat.toFixed(5)}, ${r.lng.toFixed(5)}`;
+        li.innerHTML = `<span class="mono text-muted me-2">${when}</span> ${label}`;
+        ul.appendChild(li);
+      });
+      if (!rows.length){
+        ul.innerHTML = '<li class="text-muted">Aún no hay registros.</li>';
+      }
+    }
+
+    // Exponer para el callback de Google Maps
+    window.initMap = initMap;
+  </script>
+
+  <!-- Google Maps en español con sesgo regional para MX -->
+  <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&language=es&region=MX&callback=initMap">
+  </script>
+
+  <!-- Bootstrap JS (incluye Popper para el navbar) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

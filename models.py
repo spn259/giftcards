@@ -2,7 +2,7 @@
 from collections import OrderedDict
 
 from sqlalchemy import (
-    Column, Integer, String, Text, Boolean, Enum, ForeignKey,BigInteger, DateTime, func, text, ARRAY, Float, Index, types,
+    Column, Integer,CheckConstraint, String, Text, Boolean, Enum, ForeignKey,BigInteger, DateTime, func, text, ARRAY, Float, Index, types,
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID, BIGINT, TEXT, NUMERIC
@@ -270,3 +270,18 @@ class Survey(Base):
         )
     
     
+class LocationSuggestion(Base):
+    __tablename__ = "location_suggestions"
+    __table_args__ = (
+        CheckConstraint("latitude BETWEEN -90 AND 90"),
+        CheckConstraint("longitude BETWEEN -180 AND -(-180)"),  # same as BETWEEN -180 AND 180
+        {"schema": "public"},
+    )
+
+    id         = Column(BigInteger, primary_key=True, autoincrement=True)
+    email      = Column(Text, nullable=False)
+    latitude   = Column(Float, nullable=False)   # maps to DOUBLE PRECISION
+    longitude  = Column(Float, nullable=False)
+    address    = Column(Text)
+    place_id   = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -60,6 +60,7 @@ spaces_key_id = os.environ["spaces_key_id"]
 spaces_bucket_endpoint = os.environ["spaces_bucket_endpoint"]
 spaces_bucket_name = os.environ["spaces_bucket_name"]
 openai_token = os.environ["openai_token"]
+GOOGLE_MAPS_API_KEY = os.environ["GOOGLE_MAPS_API_KEY"]
 
 
 _spaces = boto3.client(
@@ -1883,6 +1884,258 @@ def survey_photo(survey_id: int):
     body_iter = stream_with_context(obj["Body"].iter_chunks())
     return Response(body_iter, headers=headers)
 
+
+@app.route("/survey-location", methods=["GET", "POST"])
+def survey_location():
+    from models import LocationSuggestion
+    next_url = request.values.get("next") or "/"
+
+    if request.method == "POST":
+        email    = (request.form.get("email") or "").strip()
+        lat_str  = request.form.get("lat")
+        lng_str  = request.form.get("lng")
+        address  = request.form.get("address") or None
+        place_id = request.form.get("place_id") or None
+
+        # Basic validation
+        if not email or not lat_str or not lng_str:
+            return render_template(
+                "survey_location.html",
+                google_maps_api_key=GOOGLE_MAPS_API_KEY,
+                next_url=next_url,
+                error="Please enter your email and pick a spot on the map.",
+                candidate_pins=[],
+            ), 400
+
+        # Parse & range-check coordinates (friendlier than letting DB constraint fail)
+        try:
+            lat = float(lat_str)
+            lng = float(lng_str)
+        except (TypeError, ValueError):
+            return render_template(
+                "survey_location.html",
+                google_maps_api_key=GOOGLE_MAPS_API_KEY,
+                next_url=next_url,
+                error="Coordinates look invalid — try selecting the pin again.",
+                candidate_pins=[],
+            ), 400
+
+        if not (-90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0):
+            return render_template(
+                "survey_location.html",
+                google_maps_api_key=GOOGLE_MAPS_API_KEY,
+                next_url=next_url,
+                error="Coordinates out of range — please pick a valid place.",
+                candidate_pins=[],
+            ), 400
+
+        # Persist via SQLAlchemy
+        try:
+            suggestion = LocationSuggestion(
+                email=email,
+                latitude=lat,
+                longitude=lng,
+                address=address,
+                place_id=place_id,
+            )
+            db.session.add(suggestion)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            return render_template(
+                "survey_location.html",
+                google_maps_api_key=GOOGLE_MAPS_API_KEY,
+                next_url=next_url,
+                error="Couldn’t save your suggestion. Please try again.",
+                candidate_pins=[],
+            ), 500
+        token = _reward_serializer().dumps({"sid": suggestion.id})
+        print(token)
+        return redirect(url_for("survey_thanks", c=token))
+
+    # GET — render page
+    candidate_pins = []  # optionally pre-seed choices
+    return render_template(
+        "survey_location.html",
+        google_maps_api_key=GOOGLE_MAPS_API_KEY,
+        next_url=next_url,
+        candidate_pins=candidate_pins,
+    )
+
+# routes_quicklook.py (or drop into your app.py)
+
+                               # ← adjust to your project
+from models import LocationSuggestion           # ← adjust import
+from sqlalchemy import and_
+MX = ZoneInfo("America/Mexico_City")
+
+def _parse_dates():
+    """
+    Parse start/end from ?start=YYYY-MM-DD&end=YYYY-MM-DD&days=NN
+    If not provided, default to last 30 days (local MX time).
+    Returns (start_dt_inclusive, end_dt_exclusive, dedup_bool)
+    """
+    dedup = request.args.get("dedup", "0") == "1"
+    days  = request.args.get("days", type=int)
+
+    start_s = request.args.get("start", "").strip() or None
+    end_s   = request.args.get("end", "").strip() or None
+
+    today = date.today()
+    if not start_s and not end_s:
+        # default: last 30 days
+        end_local   = today
+        start_local = today - timedelta(days=29)
+    else:
+        # If only one is given, fill the other with sensible default
+        if end_s and not start_s:
+            end_local   = datetime.strptime(end_s, "%Y-%m-%d").date()
+            start_local = end_local - timedelta(days=(days or 30) - 1)
+        elif start_s and not end_s:
+            start_local = datetime.strptime(start_s, "%Y-%m-%d").date()
+            end_local   = start_local + timedelta(days=(days or 30) - 1)
+        else:
+            start_local = datetime.strptime(start_s, "%Y-%m-%d").date()
+            end_local   = datetime.strptime(end_s, "%Y-%m-%d").date()
+
+    # Inclusive start at 00:00, exclusive end at next day 00:00 (local MX tz)
+    start_dt = datetime.combine(start_local, datetime.min.time(), MX)
+    end_dt   = datetime.combine(end_local + timedelta(days=1), datetime.min.time(), MX)
+    return start_local, end_local, start_dt, end_dt, dedup
+
+def _fetch_suggestions(start_dt, end_dt, dedup=False):
+    q = (
+        db.session.query(LocationSuggestion)
+        .filter(
+            and_(
+                LocationSuggestion.created_at >= start_dt,
+                LocationSuggestion.created_at <  end_dt,
+            )
+        )
+        .order_by(LocationSuggestion.created_at.desc())
+    )
+    rows = q.all()
+
+    if dedup:
+        seen = set()
+        unique_rows = []
+        for r in rows:
+            if r.email not in seen:
+                unique_rows.append(r)
+                seen.add(r.email)
+        rows = unique_rows
+
+    return rows
+
+@app.route("/survey-location/quick-look")
+def survey_quick_look():
+    start_local, end_local, start_dt, end_dt, dedup = _parse_dates()
+    rows = _fetch_suggestions(start_dt, end_dt, dedup=dedup)
+
+    # Summaries
+    total_points   = len(rows)
+    unique_emails  = len({r.email for r in rows})
+    last_added_iso = rows[0].created_at.astimezone(MX).isoformat() if rows else None
+
+    suggestions = [
+        {
+            "id": r.id,
+            "email": r.email,
+            "lat": float(r.latitude),
+            "lng": float(r.longitude),
+            "address": r.address or "",
+            "place_id": r.place_id or "",
+            "created_at": r.created_at.astimezone(MX).isoformat(),
+        }
+        for r in rows
+    ]
+
+    return render_template(
+        "survey_quick_look.html",
+        GOOGLe_maps_api_key=GOOGLE_MAPS_API_KEY,
+        suggestions=suggestions,
+        # filter echo
+        start_value=start_local.strftime("%Y-%m-%d"),
+        end_value=end_local.strftime("%Y-%m-%d"),
+        dedup=dedup,
+        # stats
+        total_points=total_points,
+        unique_emails=unique_emails,
+        last_added_iso=last_added_iso,
+    )
+
+@app.route("/survey-location/export.csv")
+def survey_quick_look_export():
+    _, _, start_dt, end_dt, dedup = _parse_dates()
+    rows = _fetch_suggestions(start_dt, end_dt, dedup=dedup)
+
+    def gen():
+        yield "id,email,latitude,longitude,address,place_id,created_at\n"
+        for r in rows:
+            # Escape quotes and commas in address safely
+            addr = (r.address or "").replace('"', '""')
+            line = f'{r.id},"{r.email}",{r.latitude:.6f},{r.longitude:.6f},"{addr}","{r.place_id or ""}",{r.created_at.astimezone(MX).isoformat()}\n'
+            yield line
+
+    filename = f"location_suggestions_{start_dt.date()}_{(end_dt - timedelta(days=1)).date()}{'_dedup' if dedup else ''}.csv"
+    return Response(gen(), mimetype="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+# Optional: handy JSON feed for debugging or hooking up a BI tool
+@app.route("/survey-location/admin.json")
+def survey_quick_look_json():
+    _, _, start_dt, end_dt, dedup = _parse_dates()
+    rows = _fetch_suggestions(start_dt, end_dt, dedup=dedup)
+    return {
+        "count": len(rows),
+        "dedup": dedup,
+        "results": [
+            {
+                "id": r.id,
+                "email": r.email,
+                "latitude": float(r.latitude),
+                "longitude": float(r.longitude),
+                "address": r.address,
+                "place_id": r.place_id,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rows
+        ],
+    }
+
+# --- imports necesarios (si no los tienes ya) ---
+from itsdangerous import BadSignature, SignatureExpired
+# Ajusta estos imports a tu estructura
+
+
+# Si no tienes este helper aún, agrégalo (usa tu SECRET_KEY):
+from itsdangerous import URLSafeTimedSerializer
+def _reward_serializer():
+    return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="survey-reward")
+
+@app.route("/survey-location/thanks")
+def survey_thanks():
+    """
+    Muestra un mensaje simple de agradecimiento y el email registrado.
+    Valida el token y busca el registro en la BD para extraer el email.
+    """
+    token = request.args.get("c")
+    if not token:
+        abort(400)
+
+    try:
+        data = _reward_serializer().loads(token, max_age=60*60*24*90)  # válido 90 días
+        sid = data.get("sid")
+    except SignatureExpired:
+        return "⏰ El código expiró. Por favor envía una nueva sugerencia.", 400
+    except BadSignature:
+        return "❌ Código inválido.", 400
+
+    # Buscar el registro para obtener el email
+    sug = db.session.query(LocationSuggestion).filter_by(id=sid).first()
+    email = sug.email if sug else "—"
+
+    return render_template("survey_thanks.html", email=email)
 
 if local:
     app.run(debug=True, host="0.0.0.0", port=8080, threaded=True, use_reloader=True)
