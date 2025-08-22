@@ -2,38 +2,120 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>Sugiere un lugar para el food truck</title>
+  <meta name="theme-color" content="#111827" />
+
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; color: #111; }
-    .wrap { max-width: 960px; margin: 0 auto; padding: 16px; }
-    h1 { font-size: 1.25rem; margin: 12px 0 16px; }
-    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
-    .map-wrap { position: relative; height: 56vh; min-height: 360px; }
+    :root { --wrap-max: 960px; --gap: 16px; --brand: #111827; --muted: #6b7280; }
+    /* Mobile-safe viewport unit fix */
+    html, body { height: 100%; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      margin: 0; color: #111; background: #f8fafc;
+      -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Header / Navbar */
+    .site-header {
+      position: sticky; top: 0; z-index: 30;
+      background: rgba(255,255,255,.9);
+      backdrop-filter: saturate(180%) blur(8px);
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .nav-inner {
+      max-width: var(--wrap-max);
+      margin: 0 auto;
+      padding: 10px var(--gap);
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
+    .brand .logo { height: 28px; width: auto; display: block; }
+    .brand .name { font-weight: 700; letter-spacing: .2px; color: var(--brand); }
+
+    .link { color: #2563eb; text-decoration: none; font-weight: 600; }
+    .link:active { opacity: .8; }
+
+    /* Layout */
+    .wrap { max-width: var(--wrap-max); margin: 0 auto; padding: 16px; }
+    h1 { font-size: clamp(1.1rem, 1rem + 1vw, 1.4rem); margin: 12px 0 16px; }
+
+    /* Card + Map */
+    .card {
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    .map-wrap {
+      position: relative;
+      /* Use dynamic vh on mobile; fallback to 56vh on desktop */
+      height: clamp(320px, calc(var(--vh, 1vh) * 58), 70vh);
+    }
     #map { position: absolute; inset: 0; }
-    #pac-input { position: absolute; top: 12px; left: 12px; width: min(520px, calc(100% - 24px)); padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; z-index: 2; }
+    #pac-input {
+      position: absolute; top: 12px; left: 12px; right: 12px;
+      width: auto; max-width: 640px;
+      padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff;
+      z-index: 2; box-shadow: 0 1px 2px rgba(0,0,0,.05);
+      font-size: 16px; /* prevent iOS zoom */
+    }
+
+    /* Footer section inside card */
     .foot { padding: 16px; display: grid; gap: 12px; grid-template-columns: 1fr auto; align-items: center; }
     .row { display: grid; gap: 12px; grid-template-columns: 1.2fr 1fr; }
-    label { font-size: .88rem; color: #374151; }
-    input[type="email"] { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; }
-    .subtle { font-size: .8rem; color: #6b7280; }
-    .error { background: #fef2f2; color: #7f1d1d; border: 1px solid #fecaca; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; }
-    button { border: none; border-radius: 10px; padding: 12px 16px; font-weight: 600; cursor: pointer; }
-    .btn-primary { background: #111827; color: #fff; }
+    label { font-size: .92rem; color: #374151; display: block; margin-bottom: 6px; }
+    input[type="email"] {
+      width: 100%; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 16px;
+      background: #fff;
+    }
+    .subtle { font-size: .85rem; color: var(--muted); }
+    .error {
+      background: #fef2f2; color: #7f1d1d; border: 1px solid #fecaca; padding: 10px 12px;
+      border-radius: 10px; margin-bottom: 12px;
+    }
+    button {
+      border: none; border-radius: 12px; padding: 14px 16px; font-weight: 700; cursor: pointer;
+      touch-action: manipulation;
+    }
+    .btn-primary { background: var(--brand); color: #fff; }
     .btn-primary[disabled] { opacity: .45; cursor: not-allowed; }
-    .bar { padding: 12px 0 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-    .link { color: #2563eb; text-decoration: none; }
+
+    /* Mobile-first tweaks */
+    @media (max-width: 780px) {
+      .foot { grid-template-columns: 1fr; }
+      .row { grid-template-columns: 1fr; }
+      .actions { display: grid; grid-template-columns: 1fr; }
+      .actions .btn-primary { width: 100%; }
+    }
+
+    /* Dark mode */
+    @media (prefers-color-scheme: dark) {
+      body { background: #0b1220; color: #e5e7eb; }
+      .site-header { background: rgba(13, 18, 31, .7); border-color: #1f2937; }
+      .card { background: #111827; border-color: #1f2937; }
+      #pac-input { background: #0f172a; color: #e5e7eb; border-color: #334155; }
+      input[type="email"] { background: #0f172a; color: #e5e7eb; border-color: #334155; }
+      .error { background: #2a0f10; color: #fecaca; border-color: #7f1d1d; }
+      .badge { background: #0b1220; }
+    }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="bar">
-      <h1>Sugiere un lugar para nuestro food truck 🚚</h1>
+  <!-- Navbar / Logo -->
+  <header class="site-header" role="banner">
+    <div class="nav-inner">
+      <a href="{{ url_for('survey_location') }}" class="brand" aria-label="Inicio">
+        <img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="Logo" />
+        <span class="name">Food Truck</span>
+      </a>
       <a class="link" href="{{ next_url }}">Omitir</a>
     </div>
+  </header>
+
+  <main class="wrap" role="main">
+    <h1>Sugiere un lugar para nuestro food truck 🚚</h1>
 
     {% if error %}
-      <div class="error">{{ error }}</div>
+      <div class="error" role="alert">{{ error }}</div>
     {% endif %}
 
     <form id="survey-form" method="POST" action="{{ url_for('survey_location') }}?next={{ next_url|urlencode }}">
@@ -42,6 +124,7 @@
           <input id="pac-input" type="text" placeholder="Buscar un lugar o dirección…" aria-label="Buscar un lugar" />
           <div id="map" role="application" aria-label="Selecciona una ubicación en el mapa"></div>
         </div>
+
         <div class="foot">
           <div class="row">
             <div>
@@ -49,13 +132,13 @@
               <input id="email" name="email" type="email" inputmode="email" autocomplete="email" required />
               <div class="subtle">Nunca compartiremos tu correo. Solo se usará para esta encuesta.</div>
             </div>
-            <div class="subtle">
+            <div class="subtle" aria-live="polite">
               <div><strong>Ubicación elegida:</strong> <span id="picked-label">Aún no</span></div>
               <div id="addr-label"></div>
             </div>
           </div>
 
-          <div style="text-align:right;">
+          <div class="actions" style="text-align:right;">
             <button type="submit" id="submit-btn" class="btn-primary" disabled>Enviar sugerencia</button>
           </div>
         </div>
@@ -68,9 +151,18 @@
       <input type="hidden" name="place_id" id="place_id" />
       <input type="hidden" name="next" value="{{ next_url }}" />
     </form>
-  </div>
+  </main>
 
   <script>
+    // Fija --vh para que 1vh sea el alto visible real en móviles (iOS/Android)
+    function setVH() {
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    }
+    setVH();
+    window.addEventListener('resize', setVH);
+    window.addEventListener('orientationchange', setVH);
+
     // Pines "candidatos" opcionales que puedes pasar desde Flask; al hacer clic se seleccionan.
     const CANDIDATE_PINS = {{ (candidate_pins or []) | tojson | safe }};
 
@@ -84,6 +176,7 @@
         marker.setPosition(pos);
       }
       map.panTo(pos);
+
       // Actualiza los campos ocultos
       document.getElementById('lat').value = pos.lat.toFixed(6);
       document.getElementById('lng').value = pos.lng.toFixed(6);
@@ -93,24 +186,27 @@
       if (opts.place_id !== undefined) {
         document.getElementById('place_id').value = opts.place_id || '';
       }
+
+      // UI
       document.getElementById('picked-label').textContent = pos.lat.toFixed(5) + ", " + pos.lng.toFixed(5);
       document.getElementById('addr-label').textContent = (opts.address || '') ? "📍 " + opts.address : "";
-      // Habilita el envío cuando ya se eligió un punto
       document.getElementById('submit-btn').disabled = false;
     }
 
     function initMap() {
-      const defaultCenter = { lat: 19.4326, lng: -99.1332 }; // Predeterminado: CDMX; intentaremos geolocalizar abajo
+      const defaultCenter = { lat: 19.4326, lng: -99.1332 }; // CDMX (fallback)
 
       map = new google.maps.Map(document.getElementById('map'), {
         center: defaultCenter,
         zoom: 12,
         mapTypeControl: false,
         streetViewControl: false,
-        fullscreenControl: false
+        fullscreenControl: false,
+        clickableIcons: false,
+        gestureHandling: 'greedy' // mejor experiencia táctil
       });
 
-      // Cuadro de búsqueda de lugares
+      // Búsqueda con Autocomplete
       const input = document.getElementById('pac-input');
       autocomplete = new google.maps.places.Autocomplete(input, {
         fields: ["geometry", "name", "place_id", "formatted_address"]
@@ -127,7 +223,7 @@
         map.setZoom(15);
       });
 
-      // Un clic en cualquier parte selecciona ese punto
+      // Un clic en el mapa selecciona ese punto
       map.addListener("click", (e) => {
         setMarker(e.latLng.lat(), e.latLng.lng(), { address: "", place_id: "" });
       });
@@ -148,7 +244,7 @@
         });
       }
 
-      // Intentar centrar en la ubicación del usuario por conveniencia
+      // Intentar centrar en la ubicación del usuario para conveniencia
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
@@ -161,16 +257,19 @@
         );
       }
 
-      // Evita que la tecla Enter en la búsqueda envíe el formulario
+      // Evitar que Enter en el buscador envíe el formulario en móviles
       input.addEventListener("keydown", (ev) => {
         if (ev.key === "Enter") ev.preventDefault();
       });
     }
 
-    // Exponer para el callback
+    // Exponer para el callback de Google Maps
     window.initMap = initMap;
   </script>
-  <!-- Forzar la interfaz de Google Maps en español; sesgo regional para México -->
-  <script async defer src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=places&language=es&region=MX&callback=initMap"></script>
+
+  <!-- Google Maps en español con sesgo regional para MX -->
+  <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=places&language=es&region=MX&callback=initMap">
+  </script>
 </body>
 </html>
