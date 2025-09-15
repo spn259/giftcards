@@ -27,3 +27,4 @@ APScheduler
 pywebpush
 pusher_push_notifications
 requests
+httpx

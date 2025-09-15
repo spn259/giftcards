@@ -2255,7 +2255,6 @@ def survey_thanks():
     return render_template("survey_thanks.html", email=email)
 
 import os
-import requests
 from typing import Dict, Any, Iterable, List, Optional
 from tasks.utils import get_restaurant_token
 from sqlalchemy import text
@@ -2280,6 +2279,7 @@ RESTAURANT_ID  = os.getenv("RESTAURANT_ID", "cd7d0f22-eb20-450e-b185-5ce412a3a8e
 
 @app.route("/pull_orders", methods=["GET", "POST"])
 def tasks_pull_external():
+    import httpx
     bearer_token = get_restaurant_token(API_KEY, RESTAURANT_ID)
 
     if not _try_lock():
@@ -2296,10 +2296,11 @@ def tasks_pull_external():
             "created_before": last.scalar() if last else None,
         }
 
-        resp = requests.get(
-            "https://api.polotab.com/orders/v1/orders",
-            headers={"Authorization": f"Bearer {bearer_token}"},
-            params=params,
+        resp = httpx.get(
+        "https://api.polotab.com/orders/v1/orders",
+        headers={"Authorization": f"Bearer {bearer_token}"},
+        params=params,
+        timeout=20.0
         )
         resp.raise_for_status()
         ords = resp.json()
