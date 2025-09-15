@@ -40,7 +40,6 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 MX_TZ = ZoneInfo("America/Mexico_City")
 
-
 local = False
 if local:
     from dotenv import load_dotenv
