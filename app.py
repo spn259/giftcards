@@ -633,7 +633,6 @@ import numpy as np
 import pandas as pd
 from collections import defaultdict
 from flask import request, flash, redirect, url_for, render_template
-from openai import OpenAI
 
 BRACKET_RE = re.compile(r"^matches\[(.+?)\]\[\]$")
 
@@ -2369,19 +2368,20 @@ def tasks_pull_external():
         db.session.commit()
     
         for ord in ords:
-            r = pull_order_details(ord['id'], bearer_token)
-            fi = PoloOrders(
-            item_id      = r['item_id'],
-            quantity     = r['n_items'],
-            product_name = r['name'],
-            order_id     = ord['id'],
-            created_at   = r['started_at'],
-            order_type   = r['order_type'],
-            modifier     = r['modifier'],
-            price        = r['price'],
-            platform     = r['platform'],
-            status       = r['status'])
-            db.session.add(fi)
+            dets = pull_order_details(ord['id'], bearer_token)
+            for r in dets:
+                fi = PoloOrders(
+                item_id      = r['item_id'],
+                quantity     = r['n_items'],
+                product_name = r['name'],
+                order_id     = ord['id'],
+                created_at   = r['started_at'],
+                order_type   = r['order_type'],
+                modifier     = r['modifier'],
+                price        = r['price'],
+                platform     = r['platform'],
+                status       = r['status'])
+                db.session.add(fi)
         db.session.commit()
         return jsonify({"ok": True, "fetched": len(ords)})
 
