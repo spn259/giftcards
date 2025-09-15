@@ -2371,6 +2371,7 @@ def tasks_pull_external():
             dets = pull_order_details(ord['id'], bearer_token)
             for r in dets:
                 print(r)
+                logging.error(r)
                 fi = PoloOrders(
                 item_id      = r['item_id'],
                 quantity     = r['n_items'],
