@@ -19,7 +19,7 @@ def _try_lock(key: int = 942001) -> bool:
 def _unlock(key: int = 942001) -> None:
     db.session.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
 
-@app.post("/tasks/pull_orders")
+@app.route("/pull_orders", methods=["GET", "POST"])
 def tasks_pull_external():
     bearer_token = get_restaurant_token(API_KEY, RESTAURANT_ID)
 
@@ -30,7 +30,7 @@ def tasks_pull_external():
         return jsonify({"skipped": True}), 202
 
     try:
-        last = db.session.query(PoloTickets.order_id).order_by(PoloTickets.id.desc()).limit(1)
+        last = db.session.query(PoloTickets.order_id).order_by(PoloTickets.started_at.desc()).limit(1)
         params = dict()
         params['limit'] = 100
         params["created_before"] = last

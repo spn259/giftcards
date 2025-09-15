@@ -316,6 +316,8 @@ class PoloOrders(Base):
 
     # DDL: quantity int4
     quantity     = Column(Integer)
+    platform = Column(String)
+    status = Column(String)
 
     def as_dict(self):
         return {
