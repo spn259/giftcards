@@ -2319,7 +2319,7 @@ def tasks_pull_external():
         db.session.commit()
     
         for ord in ords:
-            r = pull_order_details(ord['order_id'], bearer_token)
+            r = pull_order_details(ord['id'], bearer_token)
             fi = PoloOrders(
             item_id      = r['item_id'],
             quantity     = r['n_items'],
