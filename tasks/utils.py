@@ -28,3 +28,36 @@ def get_restaurant_token(api_key: str, restaurant_id: str) -> str:
     if not token:
         raise ValueError(f"Token field not found in response: {data}")
     return token
+
+
+def pull_order_details(order_id, bearer_token):
+    resp = requests.get(
+    "https://api.polotab.com/orders/v1/orders/{}".format(order_id),
+    headers={
+      "Content-Type": "application/json",
+      "Authorization": "Bearer {}".format(bearer_token)
+    })
+    this_order = resp.json()
+
+    res = list()
+    platform = None
+    
+    for item in this_order['orderItems']:
+        status = item['status']
+        name = item['item']['name']
+        n_items = item['quantity']
+        if this_order['type'] == 'delivery':
+            platform = this_order['payments'][0]['app']['name']
+            
+        res.append((item['itemId'], name, n_items, order_id, this_order['startedAt'], this_order['type'], False, item['totalAmount'], platform, status))
+        mods = item.get('orderItemModifiers')
+        if mods:
+            for mod in mods:
+                item_x = mod['item']
+                has_name = item_x.get('name')
+                mod_price = mod['price']['amount']
+                res.append((mod['itemId'], has_name, mod['quantity'], order_id, this_order['startedAt'], this_order['type'], True, mod_price, platform, status))
+            
+            
+        
+    return res

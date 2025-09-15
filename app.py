@@ -2256,9 +2256,9 @@ def survey_thanks():
 
 import os
 from typing import Dict, Any, Iterable, List, Optional
-from tasks.utils import get_restaurant_token
+from tasks.utils import get_restaurant_token, pull_order_details
 from sqlalchemy import text
-from models import PoloTickets
+from models import PoloTickets, PoloOrders
 
 RESTAURANT_ID  = os.getenv("RESTAURANT_ID", "cd7d0f22-eb20-450e-b185-5ce412a3a8ea")
 API_KEY        = os.getenv("AUSTIN_DONUT_API_KEY", None)  # store securely in env
@@ -2293,7 +2293,7 @@ def tasks_pull_external():
         )
         params = {
             "limit": 100,
-            "created_before": last.scalar() if last else None,
+            "created_after": last.scalar() if last else None,
         }
 
         resp = httpx.get(
@@ -2317,7 +2317,25 @@ def tasks_pull_external():
             db.session.add(fi)
 
         db.session.commit()
+    
+        for ord in ords:
+            r = pull_order_details(ord['order_id'], bearer_token)
+            fi = PoloOrders(
+            item_id      = r['item_id'],
+            quantity     = r['n_items'],
+            product_name = r['name'],
+            order_id     = r['order_id'],
+            created_at   = r['started_at'],
+            order_type   = r['order_type'],
+            modifier     = r['modifier'],
+            price        = r['price'],
+            platform     = r['platform'],
+            status       = r['status'])
+            db.session.add(fi)
+        db.session.commit()
         return jsonify({"ok": True, "fetched": len(ords)})
+
+            
     except Exception as e:
         db.session.rollback()
         logging.exception("pull-external failed")
