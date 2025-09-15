@@ -2324,7 +2324,7 @@ def tasks_pull_external():
             item_id      = r['item_id'],
             quantity     = r['n_items'],
             product_name = r['name'],
-            order_id     = r['order_id'],
+            order_id     = ord['id'],
             created_at   = r['started_at'],
             order_type   = r['order_type'],
             modifier     = r['modifier'],
