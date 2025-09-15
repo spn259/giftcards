@@ -41,7 +41,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 MX_TZ = ZoneInfo("America/Mexico_City")
 
 
-local = False
+local = True
 if local:
     from dotenv import load_dotenv
     from pathlib import Path
@@ -622,10 +622,127 @@ def admin_registrar_gasto():
 
 
 from polo_utils import pull_polo_products
+import json, re
+from collections import defaultdict
+from flask import request, render_template, flash, redirect, url_for
+# assume `db`, `Menus`, `PoloProducts` already imported
+
+BRACKET_RE = re.compile(r"^matches\[(.+?)\]\[\]$")
 
 @app.route("/match_polo_products", methods=["GET", "POST"])
 def match_polo_products():
-    return jsonify({'hello'})
+    if request.method == "POST":
+        # Which groups were displayed?
+        rendered_groups = set(request.form.getlist("groups[]"))
+
+        # Build { group_name: [ids...] } from matches[<group>][]
+        selected = defaultdict(list)
+        for field, values in request.form.lists():
+            m = BRACKET_RE.match(field)
+            if not m:
+                continue
+            group = m.group(1)
+            # values is list[str] → ints (skip blanks)
+            for v in values:
+                v = (v or "").strip()
+                if not v:
+                    continue
+                try:
+                    selected[group].append(int(v))
+                except ValueError:
+                    pass
+
+        # Dedup + sort
+        selected = {g: sorted(set(ids)) for g, ids in selected.items()}
+
+        # Persist: for every rendered group, set polo_product_ids to chosen list (or empty)
+        for group in rendered_groups:
+            ids = selected.get(group, [])
+            (db.session.query(Menus)
+               .filter(Menus.product_name == group.strip(), Menus.active.is_(True))
+               .update({"polo_product_ids": ids}))
+        db.session.commit()
+
+        flash("Emparejamientos guardados.", "success")
+        return redirect(url_for("match_polo_products"))
+
+    # ───────────── GET: build `options` exactly like your current code ─────────────
+    all_prods = pd.DataFrame(
+        db.session.query(Menus.product_name, Menus.description, Menus.id)
+        .filter(Menus.active == True)
+        .all()
+    )
+    all_polo = pd.DataFrame(
+        db.session.query(
+            PoloProducts.product_name,
+            PoloProducts.modifier,
+            PoloProducts.description,
+            PoloProducts.id,
+        ).all()
+    )
+
+    polo_d = []
+    for _, r in all_polo.iterrows():
+        polo_d.append({
+            "product_name": r.product_name,
+            "description": r.description,
+            "id": r["id"],
+        })
+
+    prod_d = []
+    for _, r in all_prods.iterrows():
+        prod_d.append({
+            "product_name": r.product_name,
+            "description": r.description,
+            "id": r["id"],
+        })
+
+    prompt = """
+    For each product in the list Menu Items, try to match one or more products from the list Polo Products, 
+    output your matches as JSON list:
+
+    for example
+    "GLASEADA ORIGINAL": [{{name: name, id: id}}, {{name: name, id: id}}]
+
+    Most will have at least two matches, return the 5 best matches.
+    Include the polo id and the name as keys.
+
+    Polo products: {}
+    Menu products: {}
+    """
+
+    system_prompt = "Out put your answer as json"
+
+    this_prompt = prompt.format(polo_d, prod_d)
+
+    pull = True
+    if pull:
+        MODEL = "gpt-4.1-2025-04-14"
+        from openai import OpenAI
+        client = OpenAI(api_key=openai_token)
+        kw = {"response_format": {"type": "json_object"}}
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": this_prompt},
+            ],
+            **kw,
+        )
+        content = json.loads(response.model_dump_json())["choices"][0]["message"]["content"]
+        options = json.loads(content)
+    else:
+        options = {
+            "GLASEADA ORIGINAL": [
+                {"name": "Dona Glaseada Original", "id": 209},
+                {"name": "Dona Glaseada Original", "id": 234},
+            ],
+            # ...
+        }
+
+    return render_template("match_polo_products.html", options=options)
+
+
 
 @app.route("/refresh_products", methods=["GET", "POST"])
 def refresh_products():

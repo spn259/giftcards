@@ -115,6 +115,7 @@ class PoloProducts(Base):
     polo_id = Column(String)
     modifier = Column(Boolean)
     fk_menu_ids = Column(JSONB)
+    price = Column(Float)
  
 class Menus(Base):
     __tablename__ = "menus"
@@ -285,3 +286,59 @@ class LocationSuggestion(Base):
     address    = Column(Text)
     place_id   = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+from sqlalchemy import Column, Integer, String, DateTime, Index
+from sqlalchemy.ext.declarative import declarative_base
+
+Base = declarative_base()
+
+class PoloOrders(Base):
+    __tablename__  = "polo_orders"
+    __table_args__ = {"schema": "public", "extend_existing": True}
+
+    # DDL: id serial
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # DDL: created_at timestamp
+    created_at   = Column(DateTime(timezone=False))
+
+    # DDL: order_id varchar, item_id varchar, order_type varchar
+    order_id     = Column(String)
+    item_id      = Column(String)
+    order_type   = Column(String)
+
+    # DDL: modifier varchar, product_name varchar, product_id varchar
+    modifier     = Column(String)
+    product_name = Column(String)
+    product_id   = Column(String)
+    price = Column(Float)
+
+    # DDL: quantity int4
+    quantity     = Column(Integer)
+
+    def as_dict(self):
+        return {
+            "id": self.id,
+            "created_at": self.created_at,
+            "order_id": self.order_id,
+            "item_id": self.item_id,
+            "order_type": self.order_type,
+            "modifier": self.modifier,
+            "product_name": self.product_name,
+            "product_id": self.product_id,
+            "quantity": self.quantity,
+        }
+
+
+class PoloTickets(Base):
+    __tablename__ = "polo_tickets"
+    __table_args__ = {"schema": "public", "extend_existing": True}
+
+    id = Column(BigInteger, primary_key=True)
+    order_id = Column(String, nullable=False)
+    total_amount = Column(Float, nullable=False)
+    started_at = Column(DateTime)
+    finished_at = Column(DateTime)
+    order_type = Column(String)
+    status = Column(String)
