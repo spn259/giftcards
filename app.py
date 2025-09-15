@@ -2370,6 +2370,7 @@ def tasks_pull_external():
         for ord in ords:
             dets = pull_order_details(ord['id'], bearer_token)
             for r in dets:
+                print(r)
                 fi = PoloOrders(
                 item_id      = r['item_id'],
                 quantity     = r['n_items'],
