@@ -1,3 +1,5 @@
+import requests 
+
 BASE_URL       = "https://api.polotab.com"  # ← replace with the real base URL
 
 
