@@ -622,174 +622,174 @@ def admin_registrar_gasto():
     )
 
 
-from polo_utils import pull_polo_products
-import json, re
-from collections import defaultdict
-from flask import request, render_template, flash, redirect, url_for
-# assume `db`, `Menus`, `PoloProducts` already imported
+# from polo_utils import pull_polo_products
+# import json, re
+# from collections import defaultdict
+# from flask import request, render_template, flash, redirect, url_for
+# # assume `db`, `Menus`, `PoloProducts` already imported
 
-import json, re
-import numpy as np
-import pandas as pd
-from collections import defaultdict
-from flask import request, flash, redirect, url_for, render_template
+# import json, re
+# import numpy as np
+# import pandas as pd
+# from collections import defaultdict
+# from flask import request, flash, redirect, url_for, render_template
 
-BRACKET_RE = re.compile(r"^matches\[(.+?)\]\[\]$")
+# BRACKET_RE = re.compile(r"^matches\[(.+?)\]\[\]$")
 
-# ---- Embedding config ----
-EMBED_MODEL = "text-embedding-3-small"   # for quality use "text-embedding-3-large"
-TOP_K = 20                                # how many Polo candidates to hand to the LLM per Menu item
-EMBED_BATCH = 128
+# # ---- Embedding config ----
+# EMBED_MODEL = "text-embedding-3-small"   # for quality use "text-embedding-3-large"
+# TOP_K = 20                                # how many Polo candidates to hand to the LLM per Menu item
+# EMBED_BATCH = 128
 
-def _concat_text(name, modifier=None, description=None):
-    parts = [name or ""]
-    if modifier:
-        parts.append(str(modifier))
-    if description:
-        parts.append(str(description))
-    # short, dense signal for retrieval
-    return " | ".join([p.strip() for p in parts if p])
+# def _concat_text(name, modifier=None, description=None):
+#     parts = [name or ""]
+#     if modifier:
+#         parts.append(str(modifier))
+#     if description:
+#         parts.append(str(description))
+#     # short, dense signal for retrieval
+#     return " | ".join([p.strip() for p in parts if p])
 
-def _normalize(mat: np.ndarray) -> np.ndarray:
-    norms = np.linalg.norm(mat, axis=1, keepdims=True)
-    norms[norms == 0] = 1.0
-    return mat / norms
+# def _normalize(mat: np.ndarray) -> np.ndarray:
+#     norms = np.linalg.norm(mat, axis=1, keepdims=True)
+#     norms[norms == 0] = 1.0
+#     return mat / norms
 
-def _embed(client: OpenAI, texts, model=EMBED_MODEL, batch_size=EMBED_BATCH) -> np.ndarray:
-    """Return np.array of shape (len(texts), dim)."""
-    out = []
-    for i in range(0, len(texts), batch_size):
-        chunk = texts[i:i+batch_size]
-        resp = client.embeddings.create(model=model, input=chunk)
-        out.extend([d.embedding for d in resp.data])
-    return np.array(out, dtype=np.float32)
+# def _embed(client: OpenAI, texts, model=EMBED_MODEL, batch_size=EMBED_BATCH) -> np.ndarray:
+#     """Return np.array of shape (len(texts), dim)."""
+#     out = []
+#     for i in range(0, len(texts), batch_size):
+#         chunk = texts[i:i+batch_size]
+#         resp = client.embeddings.create(model=model, input=chunk)
+#         out.extend([d.embedding for d in resp.data])
+#     return np.array(out, dtype=np.float32)
 
-@app.route("/match_polo_products", methods=["GET", "POST"])
-def match_polo_products():
-    if request.method == "POST":
-        # Which groups were displayed?
-        rendered_groups = set(request.form.getlist("groups[]"))
+# @app.route("/match_polo_products", methods=["GET", "POST"])
+# def match_polo_products():
+#     if request.method == "POST":
+#         # Which groups were displayed?
+#         rendered_groups = set(request.form.getlist("groups[]"))
 
-        # Build { group_name: [ids...] } from matches[<group>][]
-        selected = defaultdict(list)
-        for field, values in request.form.lists():
-            m = BRACKET_RE.match(field)
-            if not m:
-                continue
-            group = m.group(1)
-            for v in values:
-                v = (v or "").strip()
-                if not v:
-                    continue
-                try:
-                    selected[group].append(int(v))
-                except ValueError:
-                    pass
+#         # Build { group_name: [ids...] } from matches[<group>][]
+#         selected = defaultdict(list)
+#         for field, values in request.form.lists():
+#             m = BRACKET_RE.match(field)
+#             if not m:
+#                 continue
+#             group = m.group(1)
+#             for v in values:
+#                 v = (v or "").strip()
+#                 if not v:
+#                     continue
+#                 try:
+#                     selected[group].append(int(v))
+#                 except ValueError:
+#                     pass
 
-        # Dedup + sort
-        selected = {g: sorted(set(ids)) for g, ids in selected.items()}
+#         # Dedup + sort
+#         selected = {g: sorted(set(ids)) for g, ids in selected.items()}
 
-        # Persist: for every rendered group, set polo_product_ids to chosen list (or empty)
-        for group in rendered_groups:
-            ids = selected.get(group, [])
-            (db.session.query(Menus)
-               .filter(Menus.product_name == group.strip(), Menus.active.is_(True))
-               .update({"polo_product_ids": ids}))
-        db.session.commit()
+#         # Persist: for every rendered group, set polo_product_ids to chosen list (or empty)
+#         for group in rendered_groups:
+#             ids = selected.get(group, [])
+#             (db.session.query(Menus)
+#                .filter(Menus.product_name == group.strip(), Menus.active.is_(True))
+#                .update({"polo_product_ids": ids}))
+#         db.session.commit()
 
-        flash("Emparejamientos guardados.", "success")
-        return redirect(url_for("match_polo_products"))
+#         flash("Emparejamientos guardados.", "success")
+#         return redirect(url_for("match_polo_products"))
 
-    from openai import OpenAI
-    client = OpenAI(api_key=openai_token)
+#     from openai import OpenAI
+#     client = OpenAI(api_key=openai_token)
 
-    # Pull source data (ensure named columns)
-    all_prods = pd.DataFrame(
-        db.session.query(Menus.product_name, Menus.description, Menus.id)
-        .filter(Menus.active.is_(True))
-        .all(),
-        columns=["product_name", "description", "id"],
-    )
-    all_polo = pd.DataFrame(
-        db.session.query(
-            PoloProducts.product_name,
-            PoloProducts.modifier,
-            PoloProducts.description,
-            PoloProducts.id,
-        ).all(),
-        columns=["product_name", "modifier", "description", "id"],
-    )
+#     # Pull source data (ensure named columns)
+#     all_prods = pd.DataFrame(
+#         db.session.query(Menus.product_name, Menus.description, Menus.id)
+#         .filter(Menus.active.is_(True))
+#         .all(),
+#         columns=["product_name", "description", "id"],
+#     )
+#     all_polo = pd.DataFrame(
+#         db.session.query(
+#             PoloProducts.product_name,
+#             PoloProducts.modifier,
+#             PoloProducts.description,
+#             PoloProducts.id,
+#         ).all(),
+#         columns=["product_name", "modifier", "description", "id"],
+#     )
 
-    # If either table is empty, bail early
-    if all_prods.empty or all_polo.empty:
-        return render_template("match_polo_products.html", options={})
+#     # If either table is empty, bail early
+#     if all_prods.empty or all_polo.empty:
+#         return render_template("match_polo_products.html", options={})
 
-    # Build texts for embeddings
-    polo_texts = [
-        _concat_text(r.product_name, r.modifier, r.description)
-        for _, r in all_polo.iterrows()
-    ]
-    menu_texts = [
-        _concat_text(r.product_name, None, r.description)
-        for _, r in all_prods.iterrows()
-    ]
+#     # Build texts for embeddings
+#     polo_texts = [
+#         _concat_text(r.product_name, r.modifier, r.description)
+#         for _, r in all_polo.iterrows()
+#     ]
+#     menu_texts = [
+#         _concat_text(r.product_name, None, r.description)
+#         for _, r in all_prods.iterrows()
+#     ]
 
-    # Compute (or load cached) embeddings
-    # TIP: cache polo embeddings in DB (e.g., pgvector) to avoid recompute on every request.
-    polo_embeds = _normalize(_embed(client, polo_texts))
-    menu_embeds = _normalize(_embed(client, menu_texts))
+#     # Compute (or load cached) embeddings
+#     # TIP: cache polo embeddings in DB (e.g., pgvector) to avoid recompute on every request.
+#     polo_embeds = _normalize(_embed(client, polo_texts))
+#     menu_embeds = _normalize(_embed(client, menu_texts))
 
-    # Similarity search: for each menu item, pick top-K polo candidates
-    Np = len(all_polo)
-    k = min(TOP_K, Np)
-    polo_T = polo_embeds.T  # (dim, Np)
+#     # Similarity search: for each menu item, pick top-K polo candidates
+#     Np = len(all_polo)
+#     k = min(TOP_K, Np)
+#     polo_T = polo_embeds.T  # (dim, Np)
 
-    candidate_map = {}  # menu_idx -> {"menu_name": str, "candidates": [ {name,id}, ... ]}
-    for i, (_, mr) in enumerate(all_prods.iterrows()):
-        sims = menu_embeds[i].dot(polo_T)  # (Np,)
-        # Get top-k indices fast
-        idx = np.argpartition(-sims, k - 1)[:k]
-        idx = idx[np.argsort(-sims[idx])]  # sort by score descending
+#     candidate_map = {}  # menu_idx -> {"menu_name": str, "candidates": [ {name,id}, ... ]}
+#     for i, (_, mr) in enumerate(all_prods.iterrows()):
+#         sims = menu_embeds[i].dot(polo_T)  # (Np,)
+#         # Get top-k indices fast
+#         idx = np.argpartition(-sims, k - 1)[:k]
+#         idx = idx[np.argsort(-sims[idx])]  # sort by score descending
 
-        cands = []
-        for j in idx:
-            pr = all_polo.iloc[int(j)]
-            cands.append({"name": pr.product_name, "id": int(pr.id)})
-        candidate_map[i] = {"menu_name": mr.product_name, "candidates": cands}
+#         cands = []
+#         for j in idx:
+#             pr = all_polo.iloc[int(j)]
+#             cands.append({"name": pr.product_name, "id": int(pr.id)})
+#         candidate_map[i] = {"menu_name": mr.product_name, "candidates": cands}
 
-    # Call the LLM only on reduced candidate lists
-    options = {}
-    system_prompt = (
-        "Output only a JSON object mapping the Menu Item name to a list of up to 5 Polo matches. "
-        "Each match is an object with keys: name (string), id (integer). No extra commentary."
-    )
-    MODEL = "gpt-4.1-2025-04-14"  # keep your existing model
-    response_format = {"type": "json_object"}
+#     # Call the LLM only on reduced candidate lists
+#     options = {}
+#     system_prompt = (
+#         "Output only a JSON object mapping the Menu Item name to a list of up to 5 Polo matches. "
+#         "Each match is an object with keys: name (string), id (integer). No extra commentary."
+#     )
+#     MODEL = "gpt-4.1-2025-04-14"  # keep your existing model
+#     response_format = {"type": "json_object"}
 
-    for i, payload in candidate_map.items():
-        menu_name = payload["menu_name"]
-        cands = payload["candidates"]
-        user_prompt = (
-            f'For the Menu Item "{menu_name}", choose up to 5 best matches from these Polo Products '
-            f'(objects with keys "name" and "id"). '
-            f'Respond as: "{menu_name}": [{{"name": "...","id": 123}}, ...]\n\n'
-            f"Candidates: {json.dumps(cands, ensure_ascii=False)}"
-        )
+#     for i, payload in candidate_map.items():
+#         menu_name = payload["menu_name"]
+#         cands = payload["candidates"]
+#         user_prompt = (
+#             f'For the Menu Item "{menu_name}", choose up to 5 best matches from these Polo Products '
+#             f'(objects with keys "name" and "id"). '
+#             f'Respond as: "{menu_name}": [{{"name": "...","id": 123}}, ...]\n\n'
+#             f"Candidates: {json.dumps(cands, ensure_ascii=False)}"
+#         )
 
-        try:
-            resp = client.chat.completions.create(
-                model=MODEL,
-                messages=[{"role": "system", "content": system_prompt},
-                          {"role": "user", "content": user_prompt}],
-                response_format=response_format,
-            )
-            content = resp.choices[0].message.content
-            options.update(json.loads(content))
-        except Exception:
-            # Fallback: top-5 by similarity if the LLM response fails/parses badly
-            options[menu_name] = cands[:5]
+#         try:
+#             resp = client.chat.completions.create(
+#                 model=MODEL,
+#                 messages=[{"role": "system", "content": system_prompt},
+#                           {"role": "user", "content": user_prompt}],
+#                 response_format=response_format,
+#             )
+#             content = resp.choices[0].message.content
+#             options.update(json.loads(content))
+#         except Exception:
+#             # Fallback: top-5 by similarity if the LLM response fails/parses badly
+#             options[menu_name] = cands[:5]
 
-    return render_template("match_polo_products.html", options=options)
+#     return render_template("match_polo_products.html", options=options)
 
 
 
