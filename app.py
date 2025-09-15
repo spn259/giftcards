@@ -61,6 +61,7 @@ spaces_bucket_endpoint = os.environ["spaces_bucket_endpoint"]
 spaces_bucket_name = os.environ["spaces_bucket_name"]
 openai_token = os.environ["openai_token"]
 GOOGLE_MAPS_API_KEY = os.environ["GOOGLE_MAPS_API_KEY"]
+AUSTIN_DONUT_API_KEY =  os.environ["AUSTIN_DONUT_API_KEY"]
 
 
 _spaces = boto3.client(
@@ -2253,6 +2254,79 @@ def survey_thanks():
     email = sug.email if sug else "—"
 
     return render_template("survey_thanks.html", email=email)
+
+import os
+import requests
+from typing import Dict, Any, Iterable, List, Optional
+from tasks.utils import get_restaurant_token
+from sqlalchemy import text
+from models import PoloTickets
+
+RESTAURANT_ID  = os.getenv("RESTAURANT_ID", "cd7d0f22-eb20-450e-b185-5ce412a3a8ea")
+API_KEY        = os.getenv("AUSTIN_DONUT_API_KEY", None)  # store securely in env
+BASE_URL       = "https://api.polotab.com"  # ← replace with the real base URL
+
+# ─── auth: exchange API key → restaurant bearer token ──────────────────────────
+
+
+def _try_lock(key: int = 942001) -> bool:
+    return db.session.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": key}).scalar()
+
+def _unlock(key: int = 942001) -> None:
+    db.session.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
+
+import requests
+RESTAURANT_ID  = os.getenv("RESTAURANT_ID", "cd7d0f22-eb20-450e-b185-5ce412a3a8ea")
+
+
+@app.route("/pull_orders", methods=["GET", "POST"])
+def tasks_pull_external():
+    bearer_token = get_restaurant_token(API_KEY, RESTAURANT_ID)
+
+    if not _try_lock():
+        return jsonify({"skipped": True}), 202
+
+    try:
+        last = (
+            db.session.query(PoloTickets.order_id)
+            .order_by(PoloTickets.started_at.desc())
+            .limit(1)
+        )
+        params = {
+            "limit": 100,
+            "created_before": last.scalar() if last else None,
+        }
+
+        resp = requests.get(
+            "https://api.polotab.com/orders/v1/orders",
+            headers={"Authorization": f"Bearer {bearer_token}"},
+            params=params,
+        )
+        resp.raise_for_status()
+        ords = resp.json()
+
+        for item in ords:
+            fi = PoloTickets(
+                order_id=item["id"],
+                started_at=item["startedAt"],
+                finished_at=item["finishedAt"],
+                total_amount=item["totalAmount"],
+                order_type=item["type"],
+                status=item["status"],
+            )
+            db.session.add(fi)
+
+        db.session.commit()
+        return jsonify({"ok": True, "fetched": len(ords)})
+    except Exception as e:
+        db.session.rollback()
+        logging.exception("pull-external failed")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        _unlock()
+
+
+
 
 if local:
     app.run(debug=True, host="0.0.0.0", port=8080, threaded=True, use_reloader=True)
