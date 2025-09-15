@@ -507,6 +507,7 @@ def save_expense():
     )
     db.session.add(fi)
     db.session.commit()
+    print("DON")
 
     return redirect(
         url_for("process_card_admin", card_id=card_id)
