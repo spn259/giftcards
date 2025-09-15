@@ -700,7 +700,7 @@ def match_polo_products():
         flash("Emparejamientos guardados.", "success")
         return redirect(url_for("match_polo_products"))
 
-    # ───────────── GET: build data, prefilter with embeddings, then LLM ─────────────
+    from openai import OpenAI
     client = OpenAI(api_key=openai_token)
 
     # Pull source data (ensure named columns)
