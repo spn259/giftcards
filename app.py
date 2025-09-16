@@ -2408,8 +2408,11 @@ def _pull_orders_job(job_id: str):
                             status       = item.get("status"),
                         ))
                     # Faster than many .add()
-                    db.session.bulk_insert_mappings(PoloTickets, ticket_rows, render_nulls=True)
-                    db.session.commit()
+                    try:
+                        db.session.bulk_insert_mappings(PoloTickets, ticket_rows, render_nulls=True)
+                        db.session.commit()
+                    except:
+                        db.session.rollback()
 
 
                     # Pull order details for each order (sequential; see optional concurrency below)
@@ -2438,8 +2441,11 @@ def _pull_orders_job(job_id: str):
                             ))
 
                     if order_rows:
-                        db.session.bulk_insert_mappings(PoloOrders, order_rows, render_nulls=True)
-                        db.session.commit()
+                        try:
+                            db.session.bulk_insert_mappings(PoloOrders, order_rows, render_nulls=True)
+                            db.session.commit()
+                        except:
+                            db.session.rollback()
 
                     total_fetched += len(orders)
                     JOB_STATE[job_id]["fetched"] = total_fetched
