@@ -2379,6 +2379,7 @@ def _pull_orders_job(job_id: str):
             cursor = None
 
             with httpx.Client(timeout=timeout, limits=limits) as client:
+                done = False
                 while True:
                     p = dict(params)
                     
