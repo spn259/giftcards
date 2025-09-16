@@ -2315,6 +2315,17 @@ BASE_URL       = "https://api.polotab.com"  # ← replace with the real base URL
 
 # ─── auth: exchange API key → restaurant bearer token ──────────────────────────
 
+# app_bootstrap.py (or wherever you init Flask)
+from concurrent.futures import ThreadPoolExecutor
+import secrets
+from datetime import timezone
+from sqlalchemy import func
+import httpx
+import logging
+
+executor = ThreadPoolExecutor(max_workers=2)  # 1–2 is plenty for this job
+JOB_STATE = {}  # in-memory progress tracker: {job_id: {status, fetched, error}}
+
 
 def _try_lock(key: int = 942001) -> bool:
     return db.session.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": key}).scalar()
@@ -2325,78 +2336,140 @@ def _unlock(key: int = 942001) -> None:
 import requests
 RESTAURANT_ID  = os.getenv("RESTAURANT_ID", "cd7d0f22-eb20-450e-b185-5ce412a3a8ea")
 
+executor = ThreadPoolExecutor(max_workers=2)  # 1–2 is plenty for this job
+JOB_STATE = {}  # in-memory progress tracker: {job_id: {status, fetched, error}}
 
-@app.route("/pull_orders", methods=["GET", "POST"])
-def tasks_pull_external():
-    import httpx
-    bearer_token = get_restaurant_token(API_KEY, RESTAURANT_ID)
+# routes.py
+from flask import jsonify, request
+from datetime import timezone
 
-    if not _try_lock():
-        return jsonify({"skipped": True}), 202
+PULL_URL = "https://api.polotab.com/orders/v1/orders"
 
-    try:
-        last = (
-            db.session.query(PoloTickets.order_id)
-            .order_by(PoloTickets.started_at.desc())
-            .limit(1)
-        )
-        params = {
-            "limit": 100,
-            "created_after": last.scalar() if last else None,
-        }
+def _safe_iso(dt):
+    # Convert to ISO8601 with timezone if you have a naive UTC timestamp in DB
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 
-        resp = httpx.get(
-        "https://api.polotab.com/orders/v1/orders",
-        headers={"Authorization": f"Bearer {bearer_token}"},
-        params=params,
-        timeout=20.0
-        )
-        resp.raise_for_status()
-        ords = resp.json()
+def _pull_orders_job(job_id: str):
+    """Runs in a background thread. Must manage its own app context + DB session."""
+    with app.app_context():
+        try:
+            JOB_STATE[job_id] = {"status": "running", "fetched": 0}
 
-        for item in ords:
-            fi = PoloTickets(
-                order_id=item["id"],
-                started_at=item["startedAt"],
-                finished_at=item["finishedAt"],
-                total_amount=item["totalAmount"],
-                order_type=item["type"],
-                status=item["status"],
-            )
-            db.session.add(fi)
+            if not _try_lock():
+                JOB_STATE[job_id] = {"status": "skipped", "fetched": 0}
+                return
 
-        db.session.commit()
-    
-        for ord in ords:
-            dets = pull_order_details(ord['id'], bearer_token)
-            for r in dets:
-                try:
-                    item_id, name, n_items, order_id, started_at, order_type, modifier, total_amount, platform, status = r
-                    fi = PoloOrders(
-                    item_id      = item_id,
-                    quantity     = n_items,
-                    product_name = name,
-                    order_id     = ord['id'],
-                    created_at   = started_at,
-                    order_type   = order_type,
-                    modifier     = modifier,
-                    price        = total_amount,
-                    platform     = platform,
-                    status       = status)
-                    db.session.add(fi)
-                    logging.error("HERE.")
-                except Exception as e:
-                    logging.error(e)
-        db.session.commit()
-        return jsonify({"ok": True, "fetched": len(ords)})
+            bearer_token = get_restaurant_token(API_KEY, RESTAURANT_ID)
 
-            
-    except Exception as e:
-        db.session.rollback()
-        logging.exception("pull-external failed")
-        return jsonify({"error": str(e)}), 500
-    finally:
-        _unlock()
+            # Get newest 'started_at' we already have so we only pull new stuff.
+            last_started = db.session.query(func.max(PoloTickets.started_at)).scalar()
+            params = {"limit": 100}
+            if last_started:
+                params["created_after"] = _safe_iso(last_started)
+
+            # Use a persistent client (keep-alive) + sensible timeouts
+            timeout = httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=30.0)
+            limits = httpx.Limits(max_connections=10, max_keepalive_connections=5)
+
+            total_fetched = 0
+            cursor = None
+
+            with httpx.Client(timeout=timeout, limits=limits) as client:
+                while True:
+                    p = dict(params)
+                    if cursor:
+                        p["cursor"] = cursor  # if your API supports pagination cursors
+
+                    resp = client.get(
+                        PULL_URL,
+                        headers={"Authorization": f"Bearer {bearer_token}"},
+                        params=p,
+                    )
+                    resp.raise_for_status()
+                    payload = resp.json()
+
+                    # Many APIs wrap results; support both shapes.
+                    orders = payload.get("orders", payload)
+                    if not orders:
+                        break
+
+                    # Bulk-insert tickets fast
+                    ticket_rows = []
+                    for item in orders:
+                        ticket_rows.append(dict(
+                            order_id     = item["id"],
+                            started_at   = item["startedAt"],   # if ISO8601, psycopg can parse
+                            finished_at  = item.get("finishedAt"),
+                            total_amount = item.get("totalAmount"),
+                            order_type   = item.get("type"),
+                            status       = item.get("status"),
+                        ))
+                    # Faster than many .add()
+                    db.session.bulk_insert_mappings(PoloTickets, ticket_rows, render_nulls=True)
+                    db.session.commit()
+
+                    # Pull order details for each order (sequential; see optional concurrency below)
+                    order_rows = []
+                    for od in orders:
+                        # If possible: pass the httpx client to reuse connection inside pull_order_details
+                        dets = pull_order_details(od["id"], bearer_token)
+                        for r in dets:
+                            (
+                                item_id, name, n_items, order_id, started_at,
+                                order_type, modifier, total_amount, platform, status
+                            ) = r
+                            order_rows.append(dict(
+                                item_id      = item_id,
+                                quantity     = n_items,
+                                product_name = name,
+                                order_id     = od["id"],
+                                created_at   = started_at,
+                                order_type   = order_type,
+                                modifier     = modifier,
+                                price        = total_amount,
+                                platform     = platform,
+                                status       = status,
+                            ))
+
+                    if order_rows:
+                        db.session.bulk_insert_mappings(PoloOrders, order_rows, render_nulls=True)
+                        db.session.commit()
+
+                    total_fetched += len(orders)
+                    JOB_STATE[job_id]["fetched"] = total_fetched
+
+                    cursor = payload.get("nextCursor")
+                    if not cursor:
+                        break
+
+            JOB_STATE[job_id]["status"] = "done"
+
+        except Exception as e:
+            db.session.rollback()
+            JOB_STATE[job_id] = {"status": "error", "error": str(e), "fetched": JOB_STATE.get(job_id, {}).get("fetched", 0)}
+            logging.exception("pull-external failed")
+        finally:
+            db.session.remove()  # important when using threads
+            _unlock()            # release your one-at-a-time guard
+# routes.py (HTTP endpoints)
+@app.route("/pull_orders", methods=["POST", "GET"])
+def enqueue_pull_orders():
+    # QUICK return. Do NOT do the heavy work here.
+    job_id = secrets.token_hex(8)
+    JOB_STATE[job_id] = {"status": "queued", "fetched": 0}
+
+    # Important: acquire the lock in the worker (not here), so skipped state can be reported.
+    executor.submit(_pull_orders_job, job_id)
+    return jsonify({"accepted": True, "job_id": job_id}), 202
+
+@app.route("/pull_orders/status/<job_id>", methods=["GET"])
+def pull_orders_status(job_id):
+    return jsonify(JOB_STATE.get(job_id, {"status": "unknown"})), 200
+
 
 
 
