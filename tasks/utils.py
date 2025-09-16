@@ -38,7 +38,6 @@ def pull_order_details(order_id, bearer_token):
       "Authorization": "Bearer {}".format(bearer_token)
     })
     this_order = resp.json()
-
     res = list()
     platform = None
     
@@ -48,16 +47,17 @@ def pull_order_details(order_id, bearer_token):
         n_items = item['quantity']
         if this_order['type'] == 'delivery':
             platform = this_order['payments'][0]['app']['name']
+        uni_id = item['id']
             
-        res.append((item['itemId'], name, n_items, order_id, this_order['startedAt'], this_order['type'], False, item['totalAmount'], platform, status))
+        res.append((item['itemId'], uni_id, name, n_items, order_id, this_order['startedAt'], this_order['type'], False, item['totalAmount'], platform, status))
         mods = item.get('orderItemModifiers')
         if mods:
             for mod in mods:
                 item_x = mod['item']
                 has_name = item_x.get('name')
                 mod_price = mod['price']['amount']
-                res.append((mod['itemId'], has_name, mod['quantity'], order_id, this_order['startedAt'], this_order['type'], True, mod_price, platform, status))
+                res.append((mod['itemId'], mod['id'], has_name, mod['quantity'], order_id, this_order['startedAt'], this_order['type'], True, mod_price, platform, status))
             
             
-    
+        
     return res

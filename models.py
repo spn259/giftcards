@@ -318,6 +318,7 @@ class PoloOrders(Base):
     quantity     = Column(Integer)
     platform = Column(String)
     status = Column(String)
+    one_time_id = Column(String, nullable=False)
 
     def as_dict(self):
         return {
@@ -330,7 +331,9 @@ class PoloOrders(Base):
             "product_name": self.product_name,
             "product_id": self.product_id,
             "quantity": self.quantity,
+            "one_time_id": self.one_time_id
         }
+
 
 
 class PoloTickets(Base):

@@ -621,217 +621,232 @@ def admin_registrar_gasto():
         end_date=end_of_today.date().isoformat(),
     )
 
+from openai import OpenAI
+from polo_utils import pull_polo_products
+import json, re
+from collections import defaultdict
+from flask import request, render_template, flash, redirect, url_for
+# assume `db`, `Menus`, `PoloProducts` already imported
 
-# from polo_utils import pull_polo_products
-# import json, re
-# from collections import defaultdict
-# from flask import request, render_template, flash, redirect, url_for
-# # assume `db`, `Menus`, `PoloProducts` already imported
+import json, re
+import numpy as np
+import pandas as pd
+from collections import defaultdict
+from flask import request, flash, redirect, url_for, render_template
 
-# import json, re
-# import numpy as np
-# import pandas as pd
-# from collections import defaultdict
-# from flask import request, flash, redirect, url_for, render_template
+BRACKET_RE = re.compile(r"^matches\[(.+?)\]\[\]$")
 
-# BRACKET_RE = re.compile(r"^matches\[(.+?)\]\[\]$")
+# ---- Embedding config ----
+EMBED_MODEL = "text-embedding-3-small"   # for quality use "text-embedding-3-large"
+TOP_K = 5                               # how many Polo candidates to hand to the LLM per Menu item
+EMBED_BATCH = 128
 
-# # ---- Embedding config ----
-# EMBED_MODEL = "text-embedding-3-small"   # for quality use "text-embedding-3-large"
-# TOP_K = 20                                # how many Polo candidates to hand to the LLM per Menu item
-# EMBED_BATCH = 128
+def _to_openai_text_list(seq):
+    """
+    Coerce a sequence into a list[str] suitable for OpenAI embeddings.
+    - Converts None / NaN / pd.NA to a single space (avoid empty strings).
+    - Decodes bytes.
+    - Ensures plain str for everything else.
+    """
+    out = []
+    for x in seq:
+        # Handle pandas / numpy NA, None, and NaN
+        if x is None or (isinstance(x, float) and math.isnan(x)) or (pd.isna(x) if 'pd' in globals() else False):
+            s = " "
+        elif isinstance(x, (bytes, bytearray)):
+            s = x.decode("utf-8", errors="ignore") or " "
+        else:
+            s = str(x)
+            if not s.strip():
+                s = " "
+        out.append(s)
+    return out
 
-# def _concat_text(name, modifier=None, description=None):
-#     parts = [name or ""]
-#     if modifier:
-#         parts.append(str(modifier))
-#     if description:
-#         parts.append(str(description))
-#     # short, dense signal for retrieval
-#     return " | ".join([p.strip() for p in parts if p])
 
-# def _normalize(mat: np.ndarray) -> np.ndarray:
-#     norms = np.linalg.norm(mat, axis=1, keepdims=True)
-#     norms[norms == 0] = 1.0
-#     return mat / norms
 
-# def _embed(client: OpenAI, texts, model=EMBED_MODEL, batch_size=EMBED_BATCH) -> np.ndarray:
-#     """Return np.array of shape (len(texts), dim)."""
-#     out = []
-#     for i in range(0, len(texts), batch_size):
-#         chunk = texts[i:i+batch_size]
-#         resp = client.embeddings.create(model=model, input=chunk)
-#         out.extend([d.embedding for d in resp.data])
-#     return np.array(out, dtype=np.float32)
+def _normalize(mat: np.ndarray) -> np.ndarray:
+    norms = np.linalg.norm(mat, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    return mat / norms
 
-# @app.route("/match_polo_products", methods=["GET", "POST"])
-# def match_polo_products():
-#     if request.method == "POST":
-#         # Which groups were displayed?
-#         rendered_groups = set(request.form.getlist("groups[]"))
+def _embed(client: OpenAI, texts, model=EMBED_MODEL, batch_size=EMBED_BATCH) -> np.ndarray:
+    """Return np.array of shape (len(texts), dim). Uses OpenAI embeddings with robust input sanitization."""
+    out = []
+    for i in range(0, len(texts), batch_size):
+        raw_chunk = texts[i:i+batch_size]
+        # Ensure a plain list[str] with no None/NaN/bytes/empties
+        chunk = _to_openai_text_list(raw_chunk)
 
-#         # Build { group_name: [ids...] } from matches[<group>][]
-#         selected = defaultdict(list)
-#         for field, values in request.form.lists():
-#             m = BRACKET_RE.match(field)
-#             if not m:
-#                 continue
-#             group = m.group(1)
-#             for v in values:
-#                 v = (v or "").strip()
-#                 if not v:
-#                     continue
-#                 try:
-#                     selected[group].append(int(v))
-#                 except ValueError:
-#                     pass
+        # Defensive: avoid sending an empty batch (shouldn't happen but cheap to guard)
+        if not chunk:
+            continue
 
-#         # Dedup + sort
-#         selected = {g: sorted(set(ids)) for g, ids in selected.items()}
+        # Call OpenAI
+        resp = client.embeddings.create(model=model, input=chunk)
 
-#         # Persist: for every rendered group, set polo_product_ids to chosen list (or empty)
-#         for group in rendered_groups:
-#             ids = selected.get(group, [])
-#             (db.session.query(Menus)
-#                .filter(Menus.product_name == group.strip(), Menus.active.is_(True))
-#                .update({"polo_product_ids": ids}))
-#         db.session.commit()
+        # Preserve order using the returned index
+        ordered = [None] * len(chunk)
+        for d in resp.data:
+            ordered[d.index] = d.embedding
+        # If something weird came back, filter any None (shouldn't happen)
+        out.extend(e for e in ordered if e is not None)
 
-#         flash("Emparejamientos guardados.", "success")
-#         return redirect(url_for("match_polo_products"))
+    return np.array(out, dtype=np.float32)
 
-#     from openai import OpenAI
-#     client = OpenAI(api_key=openai_token)
 
-#     # Pull source data (ensure named columns)
-#     all_prods = pd.DataFrame(
-#         db.session.query(Menus.product_name, Menus.description, Menus.id)
-#         .filter(Menus.active.is_(True))
-#         .all(),
-#         columns=["product_name", "description", "id"],
-#     )
-#     all_polo = pd.DataFrame(
-#         db.session.query(
-#             PoloProducts.product_name,
-#             PoloProducts.modifier,
-#             PoloProducts.description,
-#             PoloProducts.id,
-#         ).all(),
-#         columns=["product_name", "modifier", "description", "id"],
-#     )
+@app.route("/match_polo_products", methods=["GET", "POST"])
+def match_polo_products():
+    if request.method == "POST":
+        # Which groups were displayed?
+        rendered_groups = set(request.form.getlist("groups[]"))
 
-#     # If either table is empty, bail early
-#     if all_prods.empty or all_polo.empty:
-#         return render_template("match_polo_products.html", options={})
+        # Build { group_name: [ids...] } from matches[<group>][]
+        selected = defaultdict(list)
+        for field, values in request.form.lists():
+            m = BRACKET_RE.match(field)
+            if not m:
+                continue
+            group = m.group(1)
+            for v in values:
+                v = (v or "").strip()
+                if not v:
+                    continue
+                try:
+                    selected[group].append(int(v))
+                except ValueError:
+                    pass
 
-#     # Build texts for embeddings
-#     polo_texts = [
-#         _concat_text(r.product_name, r.modifier, r.description)
-#         for _, r in all_polo.iterrows()
-#     ]
-#     menu_texts = [
-#         _concat_text(r.product_name, None, r.description)
-#         for _, r in all_prods.iterrows()
-#     ]
+        # Dedup + sort
+        selected = {g: sorted(set(ids)) for g, ids in selected.items()}
 
-#     # Compute (or load cached) embeddings
-#     # TIP: cache polo embeddings in DB (e.g., pgvector) to avoid recompute on every request.
-#     polo_embeds = _normalize(_embed(client, polo_texts))
-#     menu_embeds = _normalize(_embed(client, menu_texts))
+        # Persist: for every rendered group, set polo_product_ids to chosen list (or empty)
+        for group in rendered_groups:
+            ids = selected.get(group, [])
+            (db.session.query(Menus)
+               .filter(Menus.product_name == group.strip(), Menus.active.is_(True))
+               .update({"polo_product_ids": ids}))
+        db.session.commit()
 
-#     # Similarity search: for each menu item, pick top-K polo candidates
-#     Np = len(all_polo)
-#     k = min(TOP_K, Np)
-#     polo_T = polo_embeds.T  # (dim, Np)
+        flash("Emparejamientos guardados.", "success")
+        return redirect(url_for("match_polo_products"))
 
-#     candidate_map = {}  # menu_idx -> {"menu_name": str, "candidates": [ {name,id}, ... ]}
-#     for i, (_, mr) in enumerate(all_prods.iterrows()):
-#         sims = menu_embeds[i].dot(polo_T)  # (Np,)
-#         # Get top-k indices fast
-#         idx = np.argpartition(-sims, k - 1)[:k]
-#         idx = idx[np.argsort(-sims[idx])]  # sort by score descending
+    from openai import OpenAI
+    client = OpenAI(api_key=openai_token)
 
-#         cands = []
-#         for j in idx:
-#             pr = all_polo.iloc[int(j)]
-#             cands.append({"name": pr.product_name, "id": int(pr.id)})
-#         candidate_map[i] = {"menu_name": mr.product_name, "candidates": cands}
+    # Pull source data (ensure named columns)
+    all_prods = pd.DataFrame(
+        db.session.query(Menus.product_name, Menus.description, Menus.id)
+        .filter(Menus.active.is_(True))
+        .all(),
+        columns=["product_name", "description", "id"],
+    )
+    all_polo = pd.DataFrame(
+        db.session.query(
+            PoloProducts.product_name,
+            PoloProducts.modifier,
+            PoloProducts.description,
+            PoloProducts.id,
+        ).all(),
+        columns=["product_name", "modifier", "description", "id"],
+    )
 
-#     # Call the LLM only on reduced candidate lists
-#     options = {}
-#     system_prompt = (
-#         "Output only a JSON object mapping the Menu Item name to a list of up to 5 Polo matches. "
-#         "Each match is an object with keys: name (string), id (integer). No extra commentary."
-#     )
-#     MODEL = "gpt-4.1-2025-04-14"  # keep your existing model
-#     response_format = {"type": "json_object"}
+    # If either table is empty, bail early
+    if all_prods.empty or all_polo.empty:
+        return render_template("match_polo_products.html", options={})
 
-#     for i, payload in candidate_map.items():
-#         menu_name = payload["menu_name"]
-#         cands = payload["candidates"]
-#         user_prompt = (
-#             f'For the Menu Item "{menu_name}", choose up to 5 best matches from these Polo Products '
-#             f'(objects with keys "name" and "id"). '
-#             f'Respond as: "{menu_name}": [{{"name": "...","id": 123}}, ...]\n\n'
-#             f"Candidates: {json.dumps(cands, ensure_ascii=False)}"
-#         )
+    # Build texts for embeddings
+    polo_texts = [
+        r.product_name
+        for _, r in all_polo.iterrows()
+    ]
+    menu_texts = [
+        r.product_name
+        for _, r in all_prods.iterrows()
+    ]
+    # print(polo_texts)
+    # print(menu_texts)
 
-#         try:
-#             resp = client.chat.completions.create(
-#                 model=MODEL,
-#                 messages=[{"role": "system", "content": system_prompt},
-#                           {"role": "user", "content": user_prompt}],
-#                 response_format=response_format,
-#             )
-#             content = resp.choices[0].message.content
-#             options.update(json.loads(content))
-#         except Exception:
-#             # Fallback: top-5 by similarity if the LLM response fails/parses badly
-#             options[menu_name] = cands[:5]
+    # Compute (or load cached) embeddings
+    # TIP: cache polo embeddings in DB (e.g., pgvector) to avoid recompute on every request.
+    polo_embeds = _normalize(_embed(client, polo_texts))
+    menu_embeds = _normalize(_embed(client, menu_texts))
 
-#     return render_template("match_polo_products.html", options=options)
+    # Similarity search: for each menu item, pick top-K polo candidates
+    Np = len(all_polo)
+    k = min(TOP_K, Np)
+    polo_T = polo_embeds.T  # (dim, Np)
+
+    candidate_map = {}  # menu_idx -> {"menu_name": str, "candidates": [ {name,id}, ... ]}
+    for i, (_, mr) in enumerate(all_prods.iterrows()):
+        sims = menu_embeds[i].dot(polo_T)  # (Np,)
+        # Get top-k indices fast
+        idx = np.argpartition(-sims, k - 1)[:k]
+        idx = idx[np.argsort(-sims[idx])]  # sort by score descending
+
+        cands = []
+        for j in idx:
+            pr = all_polo.iloc[int(j)]
+            cands.append({"name": pr.product_name, "id": int(pr.id)})
+        candidate_map[i] = {"menu_name": mr.product_name, "candidates": cands}
+
+    # Call the LLM only on reduced candidate lists
+    options = {}
+    system_prompt = (
+        "Output only a JSON object mapping the Menu Item name to a list of up to 5 Polo matches. "
+        "Each match is an object with keys: name (string), id (integer). No extra commentary."
+    )
+    MODEL = "gpt-4.1-2025-04-14"  # keep your existing model
+    response_format = {"type": "json_object"}
+
+    for i, payload in candidate_map.items():
+        menu_name = payload["menu_name"]
+        cands = payload["candidates"]
+        user_prompt = (
+            f'For the Menu Item "{menu_name}", choose up to 5 best matches from these Polo Products '
+            f'(objects with keys "name" and "id"). '
+            f'Respond as: "{menu_name}": [{{"name": "...","id": 123}}, ...]\n\n'
+            f"Candidates: {json.dumps(cands, ensure_ascii=False)}"
+        )
+
+        try:
+            resp = client.chat.completions.create(
+                model=MODEL,
+                messages=[{"role": "system", "content": system_prompt},
+                          {"role": "user", "content": user_prompt}],
+                response_format=response_format,
+            )
+            content = resp.choices[0].message.content
+            options.update(json.loads(content))
+        except Exception:
+            # Fallback: top-5 by similarity if the LLM response fails/parses badly
+            options[menu_name] = cands[:5]
+
+    return render_template("match_polo_products.html", options=options)
 
 
 
 @app.route("/refresh_products", methods=["GET", "POST"])
 def refresh_products():
-    from polo_utils import pull_polo_mods
+    all_polo = pd.DataFrame(db.session.query(PoloProducts.product_name, PoloProducts.polo_id, PoloProducts.modifier, PoloProducts.description, PoloProducts.id).all())
 
-    cur_prods = pd.DataFrame(
-        db.session.query(
-            PoloProducts.id,
-            PoloProducts.product_name,
-            PoloProducts.polo_id,
-            PoloProducts.description,
-        ).all()
+    bearer_token = get_restaurant_token(API_KEY, RESTAURANT_ID)
+
+    prods = requests.get(
+        "https://api.polotab.com/menus/v1/items",
+        headers={"Authorization": f"Bearer {bearer_token}"},
+        timeout=15,
     )
-    polo_prods = pull_polo_products()
-    polo_prods = pd.DataFrame(polo_prods, columns=["name", "description", "polo_id"])
-    polo_prods["modifier"] = False
-    polo_mods = list()
-    mod_ids = [
-        "ed59a5bf-f9b6-4d72-b98e-11ba9b47d8e6",
-        "55e38e78-53cd-4b18-a9c8-5d5daf487433",
-    ]
-    for mod in mod_ids:
-        these_mods = pull_polo_mods(prod_id=mod)
-        polo_mods.extend(these_mods)
-    polo_mods = pd.DataFrame(polo_mods, columns=["name", "description", "polo_id"])
-    polo_mods["modifier"] = True
+    prods.raise_for_status()
 
-    polo_prods = pd.concat([polo_prods, polo_mods]).reset_index(drop=True)
-    print(polo_mods)
-    for i, r in polo_prods.iterrows():
-        if r.polo_id not in cur_prods.polo_id.tolist():
-            fi = PoloProducts(
-                product_name=r["name"],
-                description=r.description,
-                polo_id=r.polo_id,
-                modifier=r.modifier,
-                added=datetime.utcnow(),
-            )
+    all_prods = prods.json()
+    cur_polo = all_polo.polo_id.tolist()
+    from datetime import datetime
+    for item in all_prods:
+        if item['id'] not in cur_polo:
+            fi = PoloProducts(product_name=item['name'], description=item['description'], added=datetime.utcnow(), polo_id=item['id'])
             db.session.add(fi)
         db.session.commit()
+    
     return jsonify({"added": True})
 
 
@@ -1022,93 +1037,177 @@ def save_merma_counts():
 
 @app.route("/merma_dashboard")
 def merma_dashboard():
+    import pandas as pd
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
 
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    MX  = ZoneInfo("America/Mexico_City")
+    UTC = ZoneInfo("UTC")
 
+    # ---------- Parse UI dates ----------
+    today_str = datetime.now(MX).strftime("%Y-%m-%d")
     start_str = request.args.get("start_date", today_str)
-    end_str = request.args.get("end_date", start_str)  # default: same day
+    end_str   = request.args.get("end_date", start_str)
 
-    try:
-        start_date = datetime.strptime(start_str, "%Y-%m-%d").date()
-    except ValueError:
-        print("Defaulting to today")
-        start_date = datetime.today().date()
+    def parse_ymd(s, fallback_date):
+        try:
+            return datetime.strptime(s, "%Y-%m-%d").date()
+        except Exception:
+            return fallback_date
 
-    try:
-        end_date = datetime.strptime(end_str, "%Y-%m-%d").date()
-    except ValueError:
-        print("rror conversion...")
+    start_date = parse_ymd(start_str, datetime.now(MX).date())
+    end_date   = parse_ymd(end_str, start_date)
+    if end_date < start_date:
         end_date = start_date
 
-    start_dt = datetime.combine(start_date, datetime.min.time())
+    # ---------- Build local closed–open window [start 00:00, next 00:00) ----------
+    start_local = datetime.combine(start_date, datetime.min.time(), tzinfo=MX)
+    end_local   = datetime.combine(end_date,   datetime.min.time(), tzinfo=MX) + timedelta(days=1)
 
-    end_dt = datetime.combine(end_date, datetime.max.time())
+    # UTC bounds for UTC-stored columns
+    start_utc = start_local.astimezone(UTC)
+    end_utc   = end_local.astimezone(UTC)
 
+    # Naive local bounds (for timestamp-without-time-zone columns like ProductionCounts.added)
+    start_local_naive = start_local.replace(tzinfo=None)
+    end_local_naive   = end_local.replace(tzinfo=None)
+
+    # ---------- Pull data ----------
+    # Menus (active)
+    menu = pd.DataFrame(
+        db.session.query(Menus.product_name, Menus.polo_product_ids)
+        .filter(Menus.active.is_(True))
+        .all(),
+        columns=["product_name", "polo_product_ids"],
+    )
+
+    # Sales (UTC bounds)
+    sales_df = pd.DataFrame(
+        db.session.query(
+            PoloOrders.order_id,
+            PoloOrders.id,
+            PoloOrders.item_id,
+            PoloOrders.created_at,
+            PoloOrders.quantity,
+            PoloOrders.status,
+        )
+        .filter(PoloOrders.status == "completed")
+        .filter(PoloOrders.created_at >= start_utc)
+        .filter(PoloOrders.created_at <  end_utc)
+        .all(),
+        columns=["order_id", "id", "item_id", "created_at", "quantity", "status"],
+    )
+
+    # Production (LOCAL NAIVE bounds because `added` is naive/local)
     prod_df = pd.DataFrame(
         db.session.query(
             ProductionCounts.product_name,
             ProductionCounts.n_items.label("n_prod"),
             ProductionCounts.added,
         )
-        .filter(ProductionCounts.added.between(start_dt, end_dt))
-        .all()
+        .filter(ProductionCounts.added >= start_local_naive)
+        .filter(ProductionCounts.added <  end_local_naive)
+        .all(),
+        columns=["product_name", "n_prod", "added"],
     )
 
+    # Merma (UTC bounds)
     merma_df = pd.DataFrame(
         db.session.query(
             MermaCounts.product_name,
             MermaCounts.n_items.label("n_merma"),
             MermaCounts.added,
         )
-        .filter(MermaCounts.added.between(start_dt, end_dt))
-        .all()
+        .filter(MermaCounts.added >= start_utc)
+        .filter(MermaCounts.added <  end_utc)
+        .all(),
+        columns=["product_name", "n_merma", "added"],
     )
 
-    if not merma_df.empty:
-        merma_df["date"] = merma_df["added"].dt.normalize()  # 2025-05-29 00:00:00
-        merma_df = merma_df.sort_values(
-            ["product_name", "added"]
-        ).drop_duplicates(  # newest row goes last
-            subset=["product_name", "date"], keep="last"
-        )[
-            ["product_name", "n_merma"]
-        ]  # final tidy columns
+    # ---------- Standardize time columns to UTC in pandas ----------
+    if not sales_df.empty:
+        # created_at already UTC in DB; ensure tz-aware UTC in pandas
+        sales_df["created_at"] = pd.to_datetime(sales_df["created_at"], errors="coerce", utc=True)
 
-    # ---------- 2.  Deduplicate PRODUCCIÓN by product + day ----------
     if not prod_df.empty:
-        prod_df["date"] = prod_df["added"].dt.normalize()
-        prod_df = prod_df.sort_values(["product_name", "added"]).drop_duplicates(
-            subset=["product_name", "date"], keep="last"
-        )[["product_name", "n_prod", "date"]]
+        # prod_df.added is naive local → localize MX then convert to UTC
+        prod_df["added"] = pd.to_datetime(prod_df["added"], errors="coerce")
+        if pd.api.types.is_datetime64tz_dtype(prod_df["added"]):
+            prod_df["added"] = prod_df["added"].dt.tz_convert("UTC")
+        else:
+            prod_df["added"] = prod_df["added"].dt.tz_localize("America/Mexico_City").dt.tz_convert("UTC")
 
-    prods = prod_df.drop_duplicates(subset=["product_name"]).reset_index(drop=True)
-    data = list()
-    for i, r in prods.iterrows():
-        if len(merma_df) > 0:
-            tmp_merma = merma_df[merma_df.product_name == r.product_name]
-            if len(tmp_merma) > 0:
-                # n_merma = tmp_merma.iloc[0]['n_merma']
-                n_merma = tmp_merma["n_merma"].sum()
-            else:
-                n_merma = -1
-        else:
-            n_merma = 0
-        if len(prod_df) > 0:
-            tmp_prod = prod_df[prod_df.product_name == r.product_name]
-            if len(tmp_prod) > 0:
-                n_prod = tmp_prod.iloc[0]["n_prod"]
-                n_prod = tmp_prod["n_prod"].sum()
-            else:
-                n_prod = 0
-        else:
-            n_prod = 0
+    if not merma_df.empty:
+        # If stored as UTC (tz-aware or naive UTC), normalize to tz-aware UTC
+        merma_df["added"] = pd.to_datetime(merma_df["added"], errors="coerce", utc=True)
+
+    # ---------- Map Polo product → ADC menu name ----------
+    polo_prods = pd.DataFrame(
+        db.session.query(PoloProducts.id, PoloProducts.product_name, PoloProducts.polo_id).all(),
+        columns=["id", "product_name", "polo_id"],
+    )
+
+    polo_to_name = {}
+    for _, r in menu.iterrows():
+        ids = r["polo_product_ids"] or []
+        if not ids:
+            continue
+        t = polo_prods[polo_prods["id"].isin(ids)]
+        for _, row in t.iterrows():
+            polo_to_name[row["polo_id"]] = r["product_name"]
+
+    # Aggregate sales to ADC names
+    name_to_sales = {name: 0 for name in set(polo_to_name.values())}
+    if not sales_df.empty:
+        sales_df["adc_name"] = [polo_to_name.get(x) for x in sales_df["item_id"].tolist()]
+        for _, r in sales_df.iterrows():
+            name = r["adc_name"]
+            if name:
+                name_to_sales[name] = name_to_sales.get(name, 0) + (r["quantity"] or 0)
+
+    # ---------- Dedupe/sum by LOCAL day for production and merma ----------
+    if not prod_df.empty:
+        prod_df["date_local"] = prod_df["added"].dt.tz_convert(MX).dt.normalize()
+        prod_df = (
+            prod_df.sort_values(["product_name", "added"])
+                   .drop_duplicates(subset=["product_name", "date_local"], keep="last")
+                   .groupby("product_name", as_index=False)["n_prod"].sum()
+        )
+
+    if not merma_df.empty:
+        merma_df["date_local"] = merma_df["added"].dt.tz_convert(MX).dt.normalize()
+        merma_df = (
+            merma_df.sort_values(["product_name", "added"])
+                    .drop_duplicates(subset=["product_name", "date_local"], keep="last")
+                    .groupby("product_name", as_index=False)["n_merma"].sum()
+        )
+
+    # ---------- Assemble final payload ----------
+    base_names = (
+        prod_df["product_name"].drop_duplicates().tolist()
+        if not prod_df.empty else list(name_to_sales.keys())
+    )
+
+    data = []
+    for pname in base_names:
+        sales_count = name_to_sales.get(pname, 0)
+
+        n_prod = 0
+        if not prod_df.empty:
+            tmp = prod_df[prod_df["product_name"] == pname]
+            n_prod = int(tmp["n_prod"].sum()) if not tmp.empty else 0
+
+        n_merma = 0
+        if not merma_df.empty:
+            tmp = merma_df[merma_df["product_name"] == pname]
+            n_merma = int(tmp["n_merma"].sum()) if not tmp.empty else 0
 
         data.append(
             {
-                "product_name": r.product_name,
+                "product_name": pname,
                 "merma_count": n_merma,
                 "production_count": n_prod,
-                "sales_count": 0,
+                "sales_count": sales_count,
             }
         )
 
@@ -2354,6 +2453,8 @@ def _safe_iso(dt):
     return dt.isoformat()
 
 def _pull_orders_job(job_id: str):
+    from sqlalchemy.dialects.postgresql import insert
+
     """Runs in a background thread. Must manage its own app context + DB session."""
     with app.app_context():
         try:
@@ -2366,10 +2467,10 @@ def _pull_orders_job(job_id: str):
             bearer_token = get_restaurant_token(API_KEY, RESTAURANT_ID)
 
             # Get newest 'started_at' we already have so we only pull new stuff.
-            last_started = db.session.query(func.max(PoloTickets.started_at)).scalar()
+            last_started = db.session.query(PoloTickets.polo_id).order_by(PoloTickets.started_at.desc()).one()[0]
             params = {"limit": 100}
             if last_started:
-                params["created_after"] = _safe_iso(last_started)
+                params["created_after"] = last_started
 
             # Use a persistent client (keep-alive) + sensible timeouts
             timeout = httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=30.0)
@@ -2410,8 +2511,9 @@ def _pull_orders_job(job_id: str):
                         ))
                     # Faster than many .add()
                     try:
-                        db.session.bulk_insert_mappings(PoloTickets, ticket_rows, render_nulls=True)
-                        db.session.commit()
+                        stmt = insert(PoloTickets).values(ticket_rows).on_conflict_do_nothing(index_elements=["order_id"])
+                        db.session.execute(stmt)
+                        db.session.commit()     
                     except:
                         db.session.rollback()
 
@@ -2423,13 +2525,14 @@ def _pull_orders_job(job_id: str):
                         dets = pull_order_details(od["id"], bearer_token)
                         for r in dets:
                             (
-                                item_id, name, n_items, order_id, started_at,
+                                item_id, one_time_id, name, n_items, order_id, started_at,
                                 order_type, modifier, total_amount, platform, status
                             ) = r
                             if od['id'] == last_started:
                                 break
                             order_rows.append(dict(
                                 item_id      = item_id,
+                                one_time_id = one_time_id,
                                 quantity     = n_items,
                                 product_name = name,
                                 order_id     = od["id"],
@@ -2443,7 +2546,8 @@ def _pull_orders_job(job_id: str):
 
                     if order_rows:
                         try:
-                            db.session.bulk_insert_mappings(PoloOrders, order_rows, render_nulls=True)
+                            stmt = insert(PoloOrders).values(order_rows).on_conflict_do_nothing(index_elements=["one_time_id"])
+                            db.session.execute(stmt)
                             db.session.commit()
                         except:
                             db.session.rollback()
