@@ -2396,6 +2396,9 @@ def _pull_orders_job(job_id: str):
                     # Bulk-insert tickets fast
                     ticket_rows = []
                     for item in orders:
+                        if item['id'] == last_started:
+                            done = True
+                            break
                         ticket_rows.append(dict(
                             order_id     = item["id"],
                             started_at   = item["startedAt"],   # if ISO8601, psycopg can parse
@@ -2408,6 +2411,7 @@ def _pull_orders_job(job_id: str):
                     db.session.bulk_insert_mappings(PoloTickets, ticket_rows, render_nulls=True)
                     db.session.commit()
 
+
                     # Pull order details for each order (sequential; see optional concurrency below)
                     order_rows = []
                     for od in orders:
@@ -2418,6 +2422,8 @@ def _pull_orders_job(job_id: str):
                                 item_id, name, n_items, order_id, started_at,
                                 order_type, modifier, total_amount, platform, status
                             ) = r
+                            if od['id'] == last_started:
+                                break
                             order_rows.append(dict(
                                 item_id      = item_id,
                                 quantity     = n_items,
@@ -2437,11 +2443,8 @@ def _pull_orders_job(job_id: str):
 
                     total_fetched += len(orders)
                     JOB_STATE[job_id]["fetched"] = total_fetched
-
-                    cursor = payload.get("nextCursor")
-                    if not cursor:
+                    if done:
                         break
-
             JOB_STATE[job_id]["status"] = "done"
 
         except Exception as e:
