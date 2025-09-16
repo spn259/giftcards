@@ -59,5 +59,5 @@ def pull_order_details(order_id, bearer_token):
                 res.append((mod['itemId'], has_name, mod['quantity'], order_id, this_order['startedAt'], this_order['type'], True, mod_price, platform, status))
             
             
-        
+    
     return res
