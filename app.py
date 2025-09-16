@@ -2381,9 +2381,7 @@ def _pull_orders_job(job_id: str):
             with httpx.Client(timeout=timeout, limits=limits) as client:
                 while True:
                     p = dict(params)
-                    if cursor:
-                        p["cursor"] = cursor  # if your API supports pagination cursors
-
+                    
                     resp = client.get(
                         PULL_URL,
                         headers={"Authorization": f"Bearer {bearer_token}"},
