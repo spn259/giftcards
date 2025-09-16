@@ -2370,19 +2370,18 @@ def tasks_pull_external():
         for ord in ords:
             dets = pull_order_details(ord['id'], bearer_token)
             for r in dets:
-                print(r)
-                logging.error(r)
+                item_id, name, n_items, order_id, started_at, order_type, modifier, total_amount, platform, status = r
                 fi = PoloOrders(
-                item_id      = r['item_id'],
-                quantity     = r['n_items'],
-                product_name = r['name'],
+                item_id      = item_id,
+                quantity     = n_items,
+                product_name = name,
                 order_id     = ord['id'],
-                created_at   = r['started_at'],
-                order_type   = r['order_type'],
-                modifier     = r['modifier'],
-                price        = r['price'],
-                platform     = r['platform'],
-                status       = r['status'])
+                created_at   = started_at,
+                order_type   = order_type,
+                modifier     = modifier,
+                price        = total_amount,
+                platform     = platform,
+                status       = status)
                 db.session.add(fi)
         db.session.commit()
         return jsonify({"ok": True, "fetched": len(ords)})
