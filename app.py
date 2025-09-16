@@ -2390,10 +2390,8 @@ def _pull_orders_job(job_id: str):
                         params=p,
                     )
                     resp.raise_for_status()
-                    payload = resp.json()
+                    orders = resp.json()
 
-                    # Many APIs wrap results; support both shapes.
-                    orders = payload.get("orders", payload)
                     if not orders:
                         break
 
