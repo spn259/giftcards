@@ -2467,7 +2467,7 @@ def _pull_orders_job(job_id: str):
             bearer_token = get_restaurant_token(API_KEY, RESTAURANT_ID)
 
             # Get newest 'started_at' we already have so we only pull new stuff.
-            last_started = db.session.query(PoloTickets.polo_id).order_by(PoloTickets.started_at.desc()).one()[0]
+            last_started = db.session.query(PoloTickets.order_id).order_by(PoloTickets.started_at.desc()).one()[0]
             params = {"limit": 100}
             if last_started:
                 params["created_after"] = last_started
