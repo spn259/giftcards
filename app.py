@@ -746,7 +746,9 @@ def match_polo_products():
             PoloProducts.modifier,
             PoloProducts.description,
             PoloProducts.id,
-        ).all(),
+        )
+        .filter(PoloProducts.modifier != True)
+        .all(),
         columns=["product_name", "modifier", "description", "id"],
     )
 
