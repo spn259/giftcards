@@ -2455,6 +2455,9 @@ def _safe_iso(dt):
     return dt.isoformat()
 
 def _pull_orders_job(job_id: str):
+    import random
+    RESTAURANT_ID  = random.choice(["cd7d0f22-eb20-450e-b185-5ce412a3a8ea", "139acc56-af91-4fee-9b57-d0147bc4db59"])
+
     from sqlalchemy.dialects.postgresql import insert
 
     """Runs in a background thread. Must manage its own app context + DB session."""
