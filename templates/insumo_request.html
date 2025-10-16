@@ -32,7 +32,13 @@
 
 {% block content %}
 <div class="container py-4 fade-page">
-  <h2 class="fs-5 text-center mb-4">Solicitud de insumos</h2>
+  <!-- Header with action button -->
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h2 class="fs-5 mb-0">Solicitud de insumos</h2>
+    <a href="/admin/insumos" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-list-check me-1"></i> Ver solicitudes
+    </a>
+  </div>
 
   <form id="insumoForm" class="needs-validation" novalidate autocomplete="off">
     <input type="hidden" name="employee" value="{{ employee_name }}">

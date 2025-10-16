@@ -1761,7 +1761,6 @@ def create_insumo_request():
 # routes.py
 
 @app.route("/admin/insumos")
-@login_required
 def admin_insumos():
     from models import InsumoList
     # solicitudes (más recientes primero)
