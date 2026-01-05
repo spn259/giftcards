@@ -1220,7 +1220,7 @@ def expenses_dashboard():
     # ── 1) Zona UTC y fecha/hora “ahora” ─────────────────────────────
     utc = pytz.utc
     now_utc = datetime.utcnow().replace(tzinfo=utc)
-
+    from datetime import datetime, time, timezone
     # ── 2) Límites por defecto: 1 de mes-actual 00:00 → último día 23:59 ─
     first_of_month = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     _, days_in_month = calendar.monthrange(now_utc.year, now_utc.month)
